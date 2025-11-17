@@ -284,6 +284,11 @@ where
                     .as_mut()
                     .reset(time::Instant::now() + self.node.config.construct_timeout);
 
+                // deduplicate
+                if nodes.contains_key(&m.address) {
+                    return;
+                }
+
                 // let index = network.add_node(());
                 let coverage_index = coverage.add_node(m.address);
 

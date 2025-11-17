@@ -1,6 +1,6 @@
-use std::{num::NonZero, pin::Pin, sync::Arc};
+use std::{mem, num::NonZero, pin::Pin, sync::Arc};
 
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 use tokio::{select, sync::mpsc, time};
 
 use crate::{
@@ -15,10 +15,12 @@ enum State<NA> {
         min_hop_distance: u16,
         position: glam::DVec3,
         radius: f64,
+        joins_forwarded: FxHashSet<NA>,
         timeout: Pin<Box<time::Sleep>>,
     },
     AwaitingAreaInfo {
         hop_distance: u16,
+        joins_forwarded: FxHashSet<NA>,
     },
     Streaming {
         hop_distance: u16,
@@ -101,11 +103,12 @@ where
     }
 
     async fn handle_timeout(&mut self) {
-        match &self.state {
+        match &mut self.state {
             State::Construction {
                 min_hop_distance,
                 position,
                 radius,
+                joins_forwarded,
                 timeout: _,
             } => {
                 let hop_distance = *min_hop_distance;
@@ -122,7 +125,10 @@ where
                     .await
                     .unwrap();
 
-                self.state = State::AwaitingAreaInfo { hop_distance };
+                self.state = State::AwaitingAreaInfo {
+                    hop_distance,
+                    joins_forwarded: mem::take(joins_forwarded), // the Default impl does no allocation, so take is "free"
+                };
             }
 
             _ => todo!("error? (maybe only in debug)"),
@@ -148,6 +154,7 @@ where
                     min_hop_distance: m.k.get() - ttl,
                     position,
                     radius,
+                    joins_forwarded: FxHashSet::default(),
                     timeout: Box::pin(time::sleep(self.node.config.construct_timeout)),
                 };
 
@@ -169,6 +176,7 @@ where
                 min_hop_distance,
                 position,
                 radius,
+                joins_forwarded: _,
                 timeout,
             } => {
                 let min_radius = radius.min(m.radius);
@@ -214,6 +222,7 @@ where
     async fn handle_join_report(&mut self, m: message::JoinReport<NA, GA>) {
         fn check_hop_and_forward<N, NA, GA>(
             node: &LCRTNode<N, NA, GA>,
+            forwarded: &mut FxHashSet<NA>,
             hop_distance: u16,
             mut m: message::JoinReport<NA, GA>,
         ) -> Option<impl Future<Output = Result<(), mpsc::error::SendError<Message<NA, GA>>>>>
@@ -224,14 +233,12 @@ where
         {
             // TODO: ensure that we are in eachother's RTRs?
 
-            if hop_distance >= m.forwarder_hop_distance {
+            // only send the message towards the source and deduplicate
+            if hop_distance >= m.forwarder_hop_distance || forwarded.contains(&node.address) {
                 return None;
             }
 
-            // TODO: check if it has already been seen?
-            // Due to the forwarder_hop_distance, it can only be send twice if
-            // we receive a better ttl in between receiving JOIN_REPORTs.
-            // This should happen infrequently and mut happen finitely many times (bounded by K).
+            forwarded.insert(node.address);
 
             m.forwarder_hop_distance = hop_distance;
             Some(node.tx(m))
@@ -242,26 +249,39 @@ where
 
             State::Construction {
                 min_hop_distance,
-                position,
-                radius,
+                joins_forwarded,
                 ..
             } => {
-                if let Some(future) = check_hop_and_forward(&self.node, *min_hop_distance, m) {
+                if let Some(future) =
+                    check_hop_and_forward(&self.node, joins_forwarded, *min_hop_distance, m)
+                {
                     future.await.unwrap();
                 }
             }
 
-            State::AwaitingAreaInfo { hop_distance } | State::Streaming { hop_distance, .. } => {
-                if let Some(future) = check_hop_and_forward(&self.node, *hop_distance, m) {
+            State::AwaitingAreaInfo {
+                hop_distance,
+                joins_forwarded,
+            } => {
+                if let Some(future) =
+                    check_hop_and_forward(&self.node, joins_forwarded, *hop_distance, m)
+                {
                     future.await.unwrap();
                 }
+            }
+
+            State::Streaming { .. } => {
+                // TODO: emit a warning
             }
         }
     }
 
     async fn handle_area_info(&mut self, mut m: message::AreaInfo<NA, GA>) {
         match &mut self.state {
-            State::AwaitingAreaInfo { hop_distance } => {
+            State::AwaitingAreaInfo {
+                hop_distance,
+                joins_forwarded: _,
+            } => {
                 // TODO: set NA as the node weight?
                 let neighbours: Vec<NA> = m
                     .network
@@ -296,12 +316,7 @@ where
                 }
             }
 
-            State::Streaming {
-                hop_distance,
-                nodes,
-                network,
-                neighbours,
-            } => {
+            State::Streaming { .. } => {
                 // TODO: any reason not to ignore it here?
                 // It is most likely a repeat.
             }
@@ -316,12 +331,7 @@ where
                 todo!("cache for later")
             }
 
-            State::Streaming {
-                hop_distance,
-                nodes,
-                network,
-                neighbours,
-            } => {
+            State::Streaming { neighbours, .. } => {
                 if neighbours.is_empty() {
                     return;
                 }
