@@ -34,7 +34,6 @@ enum State<NA> {
 }
 
 struct Source<N, NA, GA> {
-    group_address: GA,
     node: Arc<LCRTNode<N, NA, GA>>,
     rx: mpsc::Receiver<Message<NA, GA>>,
     state: State<NA>,
@@ -42,7 +41,7 @@ struct Source<N, NA, GA> {
 
 pub type SourceHandle<NA, GA> = mpsc::Sender<Message<NA, GA>>;
 
-pub fn spawn<N, NA, GA>(n: Arc<LCRTNode<N, NA, GA>>, address: GA) -> SourceHandle<NA, GA>
+pub fn spawn<N, NA, GA>(n: Arc<LCRTNode<N, NA, GA>>) -> SourceHandle<NA, GA>
 where
     N: NodeInfo,
     NA: Address,
@@ -51,7 +50,6 @@ where
     let (tx, rx) = mpsc::channel(BUFFER_LEN);
 
     let mut s = Source {
-        group_address: address,
         node: n,
         rx,
         state: State::Startup,
@@ -106,7 +104,7 @@ where
 
         self.node
             .tx(message::AreaConstruction {
-                group: self.group_address,
+                area: self.node.address,
                 ttl: k,
                 k,
                 position,
@@ -249,7 +247,7 @@ where
 
                 self.node
                     .tx(message::AreaInfo {
-                        group: self.group_address,
+                        area: self.node.address,
                         network: network.clone(),
                         // nodes: nodes.clone(),
                         nodes: new_nodes.clone(),
@@ -268,7 +266,7 @@ where
         }
     }
 
-    async fn handle_join_report(&mut self, m: message::JoinReport<NA, GA>) {
+    async fn handle_join_report(&mut self, m: message::JoinReport<NA>) {
         match &mut self.state {
             State::Startup => {
                 todo!("can't be for our area as we haven't sent the construction message yet")

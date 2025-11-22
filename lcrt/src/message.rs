@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-pub struct AreaConstruction<GA> {
-    pub group: GA,
+pub struct AreaConstruction<NA> {
+    pub area: NA,
     pub ttl: NonZero<u16>,
     pub k: NonZero<u16>,
     pub position: glam::DVec3,
@@ -15,8 +15,8 @@ pub struct AreaConstruction<GA> {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct JoinReport<NA, GA> {
-    pub group: GA,
+pub struct JoinReport<NA> {
+    pub area: NA,
     pub address: NA,
     pub hop_distance: u16,
     pub position: glam::DVec3,
@@ -25,8 +25,8 @@ pub struct JoinReport<NA, GA> {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct AreaInfo<NA, GA> {
-    pub group: GA,
+pub struct AreaInfo<NA> {
+    pub area: NA,
     pub network: Graph<(), ()>,
     #[serde(bound(deserialize = "NA: Eq + std::hash::Hash + Deserialize<'de>"))]
     pub nodes: FxHashMap<NA, NodeData>,
@@ -73,18 +73,19 @@ pub struct NodeData {
 // }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-pub struct Data<GA, D> {
+pub struct Data<NA, GA, D> {
+    pub area: NA,
     pub group: GA,
     pub data: D,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Message<NA = Ipv4Addr, GA = Ipv4Addr, D = Box<[u8]>> {
-    AreaConstruction(AreaConstruction<GA>),
-    JoinReport(JoinReport<NA, GA>),
+    AreaConstruction(AreaConstruction<NA>),
+    JoinReport(JoinReport<NA>),
     #[serde(bound(deserialize = "NA: Eq + std::hash::Hash + Deserialize<'de>"))]
-    AreaInfo(AreaInfo<NA, GA>),
-    Data(Data<GA, D>),
+    AreaInfo(AreaInfo<NA>),
+    Data(Data<NA, GA, D>),
 }
 
 pub type Sender<NA = Ipv4Addr, GA = Ipv4Addr, D = Box<[u8]>> = mpsc::Sender<Message<NA, GA, D>>;
@@ -106,22 +107,22 @@ macro_rules! into_message_impl {
 }
 
 into_message_impl! {
-    AreaConstruction<GA> => Message::AreaConstruction,
-    JoinReport<NA, GA> => Message::JoinReport,
-    AreaInfo<NA, GA> => Message::AreaInfo,
-    Data<GA, D> => Message::Data,
+    AreaConstruction<NA> => Message::AreaConstruction,
+    JoinReport<NA> => Message::JoinReport,
+    AreaInfo<NA> => Message::AreaInfo,
+    Data<NA, GA, D> => Message::Data,
 }
 
 impl<NA, GA, D> Message<NA, GA, D> {
-    pub fn group(&self) -> GA
+    pub fn area(&self) -> NA
     where
-        GA: Copy,
+        NA: Copy,
     {
         match self {
-            Message::AreaConstruction(m) => m.group,
-            Message::JoinReport(m) => m.group,
-            Message::AreaInfo(m) => m.group,
-            Message::Data(m) => m.group,
+            Message::AreaConstruction(m) => m.area,
+            Message::JoinReport(m) => m.area,
+            Message::AreaInfo(m) => m.area,
+            Message::Data(m) => m.area,
         }
     }
 

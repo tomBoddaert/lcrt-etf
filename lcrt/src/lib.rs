@@ -2,7 +2,7 @@
 
 use std::{hash::Hash, num::NonZero};
 
-pub(crate) mod group;
+pub(crate) mod area;
 pub mod message;
 pub mod node;
 pub(crate) mod source;

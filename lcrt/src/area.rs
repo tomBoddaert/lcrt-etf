@@ -30,16 +30,16 @@ enum State<NA> {
     },
 }
 
-struct Group<N, NA, GA> {
-    group_address: GA,
+struct Area<N, NA, GA> {
+    area_id: NA,
     node: Arc<LCRTNode<N, NA, GA>>,
     rx: mpsc::Receiver<Message<NA, GA>>,
     state: State<NA>,
 }
 
-pub type GroupHandle<NA, GA> = mpsc::Sender<Message<NA, GA>>;
+pub type AreaHandle<NA, GA> = mpsc::Sender<Message<NA, GA>>;
 
-pub fn spawn<N, NA, GA>(n: Arc<LCRTNode<N, NA, GA>>, address: GA) -> GroupHandle<NA, GA>
+pub fn spawn<N, NA, GA>(n: Arc<LCRTNode<N, NA, GA>>, id: NA) -> AreaHandle<NA, GA>
 where
     N: NodeInfo,
     NA: Address,
@@ -47,8 +47,8 @@ where
 {
     let (tx, rx) = mpsc::channel(BUFFER_LEN);
 
-    let mut g = Group {
-        group_address: address,
+    let mut g = Area {
+        area_id: id,
         node: n,
         rx,
         state: State::Startup,
@@ -63,7 +63,7 @@ where
     tx
 }
 
-impl<N, NA, GA> Group<N, NA, GA>
+impl<N, NA, GA> Area<N, NA, GA>
 where
     N: NodeInfo,
     NA: Address,
@@ -115,7 +115,7 @@ where
 
                 self.node
                     .tx(message::JoinReport {
-                        group: self.group_address,
+                        area: self.area_id,
                         address: self.node.address,
                         hop_distance,
                         position: *position,
@@ -135,7 +135,7 @@ where
         }
     }
 
-    async fn handle_area_construction(&mut self, m: message::AreaConstruction<GA>) {
+    async fn handle_area_construction(&mut self, m: message::AreaConstruction<NA>) {
         match &mut self.state {
             State::Startup => {
                 let position = self.node.info.position().await;
@@ -219,12 +219,12 @@ where
         }
     }
 
-    async fn handle_join_report(&mut self, m: message::JoinReport<NA, GA>) {
+    async fn handle_join_report(&mut self, m: message::JoinReport<NA>) {
         fn check_hop_and_forward<N, NA, GA>(
             node: &LCRTNode<N, NA, GA>,
             forwarded: &mut FxHashSet<NA>,
             hop_distance: u16,
-            mut m: message::JoinReport<NA, GA>,
+            mut m: message::JoinReport<NA>,
         ) -> Option<impl Future<Output = Result<(), mpsc::error::SendError<Message<NA, GA>>>>>
         where
             N: NodeInfo,
@@ -276,7 +276,7 @@ where
         }
     }
 
-    async fn handle_area_info(&mut self, mut m: message::AreaInfo<NA, GA>) {
+    async fn handle_area_info(&mut self, mut m: message::AreaInfo<NA>) {
         match &mut self.state {
             State::AwaitingAreaInfo {
                 hop_distance,
@@ -325,7 +325,7 @@ where
         }
     }
 
-    async fn handle_data(&mut self, m: message::Data<GA, Box<[u8]>>) {
+    async fn handle_data(&mut self, m: message::Data<NA, GA, Box<[u8]>>) {
         match &mut self.state {
             State::Startup | State::Construction { .. } | State::AwaitingAreaInfo { .. } => {
                 todo!("cache for later")

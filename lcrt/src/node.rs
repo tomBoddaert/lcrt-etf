@@ -5,7 +5,7 @@ use tokio::sync::{Mutex, mpsc};
 
 use crate::{
     Address, BUFFER_LEN, Config,
-    group::{self, GroupHandle},
+    area::{self, AreaHandle},
     message::{self, Message},
     source::{self, SourceHandle},
 };
@@ -33,8 +33,8 @@ pub(crate) struct LCRTNode<N, NA = Ipv4Addr, GA = Ipv4Addr> {
     pub info: N,
     pub address: NA,
     pub config: Config,
-    pub groups: Mutex<FxHashMap<GA, GroupHandle<NA, GA>>>,
-    pub sources: Mutex<FxHashMap<GA, SourceHandle<NA, GA>>>,
+    pub areas: Mutex<FxHashMap<NA, AreaHandle<NA, GA>>>,
+    pub source: Mutex<Option<SourceHandle<NA, GA>>>,
     pub tx: message::Sender<NA, GA>,
 }
 
@@ -62,8 +62,8 @@ where
             info: node,
             address,
             config,
-            groups: Mutex::new(FxHashMap::default()),
-            sources: Mutex::new(FxHashMap::default()),
+            areas: Mutex::new(FxHashMap::default()),
+            source: Mutex::default(),
             tx,
         });
 
@@ -77,15 +77,21 @@ where
         (Self { node, task }, in_tx, out_rx)
     }
 
-    pub async fn construct_area(&mut self, address: GA) {
-        let mut sources = self.node.sources.lock().await;
+    pub async fn construct_area(&mut self) {
+        let mut source = self.node.source.lock().await;
 
-        let entry = match sources.entry(address) {
-            hash_map::Entry::Occupied(_occupied_entry) => return,
-            hash_map::Entry::Vacant(vacant_entry) => vacant_entry,
-        };
+        if source.is_some() {
+            return;
+        }
 
-        entry.insert(source::spawn(self.node.clone(), address));
+        *source = Some(source::spawn(self.node.clone()));
+
+        // let entry = match sources.entry(address) {
+        //     hash_map::Entry::Occupied(_occupied_entry) => return,
+        //     hash_map::Entry::Vacant(vacant_entry) => vacant_entry,
+        // };
+
+        // entry.insert(source::spawn(self.node.clone(), address));
     }
 
     #[inline]
@@ -177,14 +183,14 @@ where
     }
 
     async fn handle(self: &Arc<Self>, m: Message<NA, GA>) {
-        let address = m.group();
-        let mut groups = self.groups.lock().await;
+        let address = m.area();
+        let mut areas = self.areas.lock().await;
 
-        let entry = match groups.entry(address) {
+        let entry = match areas.entry(address) {
             hash_map::Entry::Occupied(occupied_entry) => occupied_entry,
 
             hash_map::Entry::Vacant(vacant_entry) if matches!(m, Message::AreaConstruction(_)) => {
-                vacant_entry.insert_entry(group::spawn(self.clone(), address))
+                vacant_entry.insert_entry(area::spawn(self.clone(), address))
             }
 
             _ => {
