@@ -1,18 +1,17 @@
 [package]
 name = "lcrt"
-version = "0.0.1"
-edition = "2024"
+version = "0.0.2"
+authors.workspace = true
+edition.workspace = true
+homepage = "https://github.com/tomBoddaert/lcrt-etf/tree/main/lcrt"
+repository.workspace = true
+license.workspace = true
 
 [dependencies]
 rustc-hash.workspace = true
-tokio.workspace = true
 petgraph.workspace = true
 glam.workspace = true
 serde.workspace = true
 
-[features]
-default = ["tokio-rt-multi-thread"]
-tokio-rt-multi-thread = ["tokio/rt-multi-thread"]
-
-[dev-dependencies]
-tokio = { version = "1.48.0", features = ["rt-multi-thread"] }
+[lints]
+workspace = true

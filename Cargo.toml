@@ -1,17 +1,23 @@
 [workspace]
 resolver = "3"
-# members = ["etf", "lcrt"]
 members = ["lcrt"]
 
+[workspace.package]
+authors = ["Tom Boddaert <lcrt-etf@tomboddaert.com>"]
+edition = "2024"
+repository = "https://github.com/tomBoddaert/dynode"
+license = "MIT OR Apache-2.0"
+
 [workspace.dependencies]
+lcrt = { path = "lcrt" }
 petgraph = { version = "0.8.3" , features = ["serde-1"] }
 glam = { version = "0.30.8" , features = ["serde"] }
 rustc-hash = "2.1.1"
-tokio = { version = "1.48.0", features = ["sync", "macros", "time", "rt"] }
+# tokio = { version = "1.48.0", features = ["sync", "macros", "time", "rt", "rt-multi-thread"] }
 serde = { version = "1.0.228" , features = ["derive"] }
 
 [workspace.lints.rust]
-unsafe_code = "forbid"
+unsafe_code = "deny"
 
 [workspace.lints.clippy]
 all = "warn"
@@ -26,4 +32,4 @@ pub_without_shorthand = "warn"
 redundant_type_annotations = "warn"
 todo = "warn"
 cognitive_complexity = "warn"
-unwrap_used = { level = "warn", allow-unwrap-in-tests = true } # seemingly not working?
+unwrap_used = "warn"

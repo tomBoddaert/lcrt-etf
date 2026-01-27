@@ -1,72 +1,25 @@
-// TODO: warn on unwrap
-
-use std::{hash::Hash, num::NonZero};
-
-pub(crate) mod area;
+mod area;
+mod area_any;
+mod area_source;
+mod config;
 pub mod message;
-pub mod node;
-pub(crate) mod source;
+mod node_info;
+use std::{net::Ipv4Addr, time};
 
-const BUFFER_LEN: usize = 3;
+pub use area::Area;
+pub use area_any::AreaAny;
+pub use area_source::AreaSource;
+pub use config::Config;
+pub use node_info::NodeInfo;
+use petgraph::graph;
 
-pub trait Address: Copy + Eq + Hash + Send + Sync + 'static {}
-impl<T: Copy + Eq + Hash + Send + Sync + 'static> Address for T {}
+pub type Network = graph::Graph<Ipv4Addr, ()>;
+pub type Response = (Option<message::Message>, Option<time::Duration>);
 
-pub struct Config {
-    pub k: NonZero<u16>,
-    pub construct_timeout: std::time::Duration,
-    pub source_construct_timeout: std::time::Duration,
+fn availability(capacity: f32, rate: f32) -> f32 {
+    capacity / rate
 }
 
-// pub trait Backoff {
-//     fn reset(&mut self) -> std::time::Duration;
-// }
-
-// pub trait BackoffBuilder {
-//     type Backoff: Backoff;
-
-//     fn build(&self) -> (Self::Backoff, std::time::Duration);
-// }
-
-// pub struct ConstantBackoff {
-//     duration: std::time::Duration,
-// }
-
-// pub struct ConstantBackoffBuilder {
-//     pub duration: std::time::Duration,
-// }
-
-// impl Backoff for ConstantBackoff {
-//     #[inline]
-//     fn reset(&mut self) -> std::time::Duration {
-//         self.duration
-//     }
-// }
-
-// impl BackoffBuilder for ConstantBackoffBuilder {
-//     type Backoff = ConstantBackoff;
-
-//     #[inline]
-//     fn build(&self) -> (Self::Backoff, std::time::Duration) {
-//         (
-//             Self::Backoff {
-//                 duration: self.duration,
-//             },
-//             self.duration,
-//         )
-//     }
-// }
-
-// impl ConstantBackoffBuilder {
-//     #[inline]
-//     pub const fn new(duration: std::time::Duration) -> Self {
-//         Self { duration }
-//     }
-
-//     #[inline]
-//     pub const fn ms30() -> Self {
-//         Self {
-//             duration: std::time::Duration::from_millis(30),
-//         }
-//     }
-// }
+fn eta(availability: f32, children: u16, interfering_nodes: u16) -> f32 {
+    f32::from(children) / f32::from(interfering_nodes) * availability
+}
