@@ -1,0 +1,17 @@
+[package]
+name = "etf"
+version = "0.0.0"
+authors.workspace = true
+edition.workspace = true
+homepage = "https://github.com/tomBoddaert/lcrt-etf/tree/main/etf"
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+lcrt.workspace = true
+rustc-hash.workspace = true
+glam.workspace = true
+petgraph.workspace = true
+
+[lints]
+workspace = true
