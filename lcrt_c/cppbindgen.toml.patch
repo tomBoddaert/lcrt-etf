@@ -1,0 +1,11 @@
+--- cbindgen.toml
++++ cppbindgen.toml
+@@ -4,1 +4,1 @@
+-language = "C"
++language = "C++"
+@@ -10,1 +10,1 @@
+-include_guard = "LIBLCRT_H"
++include_guard = "LIBLCRT_HPP"
+@@ -17,1 +17,1 @@
+-sys_includes = ["stdint.h"]
++sys_includes = ["cstdint"]

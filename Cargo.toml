@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["lcrt", "etf"]
+members = ["lcrt", "etf", "lcrt_c"]
 
 [workspace.package]
 authors = ["Tom Boddaert <lcrt-etf@tomboddaert.com>"]

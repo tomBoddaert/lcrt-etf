@@ -1,0 +1,27 @@
+[package]
+name = "lcrt_c"
+version = "0.0.0"
+authors.workspace = true
+edition.workspace = true
+homepage = "https://github.com/tomBoddaert/lcrt-etf/tree/main/lcrt_c"
+repository.workspace = true
+license.workspace = true
+
+[lib]
+name = "lcrt_c"
+crate-type = ["staticlib"]
+
+[dependencies]
+lcrt.workspace = true
+glam.workspace = true
+ciborium = "0.2.2"
+
+[build-dependencies]
+cbindgen = { version = "0.29.2", default-features = false }
+diffy = "0.4.2"
+serde.workspace = true
+toml = "0.9.8"
+
+[lints]
+workspace = true
+
