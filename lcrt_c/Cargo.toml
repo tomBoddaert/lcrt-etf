@@ -3,9 +3,13 @@ name = "lcrt_c"
 version = "0.0.0"
 authors.workspace = true
 edition.workspace = true
+description = "A C API for the LCRT routing algorithm"
+readme = "README.md"
 homepage = "https://github.com/tomBoddaert/lcrt-etf/tree/main/lcrt_c"
 repository.workspace = true
 license.workspace = true
+keywords = ["network", "protocol", "routing", "c-api"]
+categories = ["network-programming"]
 
 [lib]
 name = "lcrt_c"

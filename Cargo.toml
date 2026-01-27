@@ -22,7 +22,7 @@ unsafe_code = "deny"
 [workspace.lints.clippy]
 all = "warn"
 allow_attributes = "warn"
-# cargo = "warn"
+cargo = "warn"
 get_unwrap = "warn"
 nursery = "warn"
 panic_in_result_fn = "warn"

@@ -3,9 +3,13 @@ name = "lcrt"
 version = "0.0.2"
 authors.workspace = true
 edition.workspace = true
+description = "An implementation of the single-source, multicast, ad-hoc routing algorithm LCRT"
+readme = "README.md"
 homepage = "https://github.com/tomBoddaert/lcrt-etf/tree/main/lcrt"
 repository.workspace = true
 license.workspace = true
+keywords = ["network", "protocol", "routing"]
+categories = ["network-programming"]
 
 [dependencies]
 rustc-hash.workspace = true
