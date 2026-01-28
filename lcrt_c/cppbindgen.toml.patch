@@ -7,5 +7,5 @@
 -include_guard = "LIBLCRT_H"
 +include_guard = "LIBLCRT_HPP"
 @@ -17,1 +17,1 @@
--sys_includes = ["stdint.h"]
-+sys_includes = ["cstdint"]
+-sys_includes = ["stddef.h", "stdint.h"]
++sys_includes = ["cstddef", "cstdint"]

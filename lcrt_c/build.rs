@@ -1,12 +1,14 @@
 use std::{env, fs, path::Path};
 
 fn main() {
-    #![expect(clippy::unwrap_used)]
-    let crate_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
+    let crate_dir_var =
+        env::var("CARGO_MANIFEST_DIR").expect("expected build.rs to be run from cargo");
+    let crate_dir = Path::new(&crate_dir_var);
+    let include_dir = crate_dir.join("include");
 
-    let c_config_path = Path::new(&crate_dir).join("cbindgen.toml");
-    let cpp_config_patch_path = Path::new(&crate_dir).join("cppbindgen.toml.patch");
-    let cpp_config_path = Path::new(&crate_dir).join("cppbindgen.toml");
+    let c_config_path = crate_dir.join("cbindgen.toml");
+    let cpp_config_patch_path = crate_dir.join("cppbindgen.toml.patch");
+    let cpp_config_path = crate_dir.join("cppbindgen.toml");
 
     let c_config_str = fs::read_to_string(&c_config_path).expect("failed to read cbindgen.toml");
     let cpp_config_patch_str =
@@ -14,7 +16,6 @@ fn main() {
 
     let patch = diffy::Patch::from_str(&cpp_config_patch_str)
         .expect("failed to parse cppbindgen.toml.patch");
-
     let cpp_config_str = diffy::apply(&c_config_str, &patch)
         .expect("failed to apply cppbindgen.toml.patch to cbindgen.toml");
 
@@ -25,16 +26,16 @@ fn main() {
         .expect("failed to parse cppbindgen.toml as toml");
     cpp_config.config_path = Some(cpp_config_path);
 
-    cbindgen::Builder::new()
-        .with_crate(&crate_dir)
+    let builder = cbindgen::Builder::new().with_crate(crate_dir);
+    builder
+        .clone()
         .with_config(c_config)
         .generate()
         .expect("failed to generate c bindings")
-        .write_to_file("liblcrt.h");
-    cbindgen::Builder::new()
-        .with_crate(crate_dir)
+        .write_to_file(include_dir.join("liblcrt.h"));
+    builder
         .with_config(cpp_config)
         .generate()
-        .expect("failed to generate c bindings")
-        .write_to_file("liblcrt.hpp");
+        .expect("failed to generate c++ bindings")
+        .write_to_file(include_dir.join("liblcrt.hpp"));
 }

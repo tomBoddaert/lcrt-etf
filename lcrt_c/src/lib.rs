@@ -45,7 +45,7 @@ impl From<LcrtPosition> for glam::DVec3 {
 #[repr(C)]
 pub struct LcrtConfig {
     /// Must be non-zero.
-    pub k: NonZero<u16>,
+    pub k: u16,
     pub radius: f64,
     pub bitrate_capacity: f32,
     /// Nanoseconds.
@@ -71,7 +71,7 @@ impl From<LcrtConfig> for lcrt::Config {
         }: LcrtConfig,
     ) -> Self {
         Self {
-            k,
+            k: NonZero::new(k).expect("k must be non-zero"),
             radius,
             bitrate_capacity,
             construct_timeout: time::Duration::from_nanos(construct_timeout),
