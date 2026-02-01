@@ -10,6 +10,21 @@ fn main() {
     let cpp_config_patch_path = crate_dir.join("cppbindgen.toml.patch");
     let cpp_config_path = crate_dir.join("cppbindgen.toml");
 
+    println!(
+        "cargo::rerun-if-changed={}",
+        c_config_path
+            .file_name()
+            .expect("failed to get C config file name")
+            .display()
+    );
+    println!(
+        "cargo::rerun-if-changed={}",
+        cpp_config_patch_path
+            .file_name()
+            .expect("failed to get C++ config patch file name")
+            .display()
+    );
+
     let c_config_str = fs::read_to_string(&c_config_path).expect("failed to read cbindgen.toml");
     let cpp_config_patch_str =
         fs::read_to_string(cpp_config_patch_path).expect("failed to read cppbindgen.toml.patch");
@@ -27,15 +42,20 @@ fn main() {
     cpp_config.config_path = Some(cpp_config_path);
 
     let builder = cbindgen::Builder::new().with_crate(crate_dir);
-    builder
-        .clone()
-        .with_config(c_config)
-        .generate()
-        .expect("failed to generate c bindings")
-        .write_to_file(include_dir.join("liblcrt.h"));
-    builder
-        .with_config(cpp_config)
-        .generate()
-        .expect("failed to generate c++ bindings")
-        .write_to_file(include_dir.join("liblcrt.hpp"));
+    let write = |config, name| {
+        builder.clone().with_config(config).generate().map_or_else(
+            |error| match error {
+                cbindgen::Error::ParseSyntaxError { .. } => {
+                    println!("cargo::warning=cbindgen failed to parse the code");
+                }
+                error => println!("cargo::error={error}"),
+            },
+            |bindings| {
+                bindings.write_to_file(include_dir.join(name));
+            },
+        );
+    };
+
+    write(c_config, "liblcrt.h");
+    write(cpp_config, "liblcrt.hpp");
 }
