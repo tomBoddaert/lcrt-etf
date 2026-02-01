@@ -1,6 +1,6 @@
 #![allow(unsafe_code)]
 
-use std::{ffi::c_void, num::NonZero, time};
+use std::{ffi::c_void, net::Ipv4Addr, num::NonZero, time};
 
 use lcrt::message;
 
@@ -184,12 +184,15 @@ pub unsafe extern "C" fn lcrt_area_get_hop_distance(
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn lcrt_area_is_forwarder(area: *const LcrtArea, dst: u32) -> bool {
-    unsafe { &*area }.0.is_forwarder(dst.into())
+    let area = &unsafe { &*area }.0;
+    area.get_group() == Ipv4Addr::from(dst) && area.has_children()
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn lcrt_area_is_parent(area: *const LcrtArea, last_forwarder: u32) -> bool {
-    unsafe { &*area }.0.is_parent(last_forwarder.into())
+    let area = &unsafe { &*area }.0;
+    area.get_parent()
+        .is_some_and(|parent| parent == Ipv4Addr::from(last_forwarder))
 }
 
 #[repr(C)]

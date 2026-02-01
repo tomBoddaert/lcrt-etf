@@ -4,6 +4,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{Config, Network, NodeInfo, availability, message};
 
+/// Routing controller for an LCRT area non-source member (forwarder / receiver).
 pub struct Area<N> {
     config: Config,
     address: Ipv4Addr,
@@ -13,6 +14,10 @@ pub struct Area<N> {
 }
 
 impl<N: NodeInfo> Area<N> {
+    /// Construct a new non-source area routing controller.
+    ///
+    /// # Panics
+    /// This will panic if `config` is not valid (see [`Config::is_valid`]).
     pub const fn new(config: Config, node_info: N, address: Ipv4Addr, group: Ipv4Addr) -> Self {
         assert!(config.is_valid());
 
@@ -26,19 +31,25 @@ impl<N: NodeInfo> Area<N> {
     }
 
     #[inline]
+    /// Get the node's address.
     pub const fn get_address(&self) -> Ipv4Addr {
         self.address
     }
 
     #[inline]
+    /// Get the group address for the area.
     pub const fn get_group(&self) -> Ipv4Addr {
         self.group
     }
 
+    #[inline]
+    /// Returns whether this routing controller has established an area and is able to receive data streams.
     pub const fn is_streaming(&self) -> bool {
         matches!(&self.state, State::Streaming { .. })
     }
 
+    #[inline]
+    /// If the network is established, returns the network topology graph and [`NodeData`](message::NodeData) map.
     pub const fn get_network(&self) -> Option<(&FxHashMap<Ipv4Addr, message::NodeData>, &Network)> {
         let State::Streaming { nodes, network, .. } = &self.state else {
             return None;
@@ -47,58 +58,38 @@ impl<N: NodeInfo> Area<N> {
         Some((nodes, network))
     }
 
-    pub fn is_forwarder(&self, dst: Ipv4Addr) -> bool {
-        // println!(
-        //     "Area::is_forwarder(self.group: {}, dst: {}) -> {}",
-        //     self.group,
-        //     dst,
-        //     self.group == dst
-        // );
-        if dst != self.group {
-            return false;
-        }
-
-        let State::Streaming { neighbours, .. } = &self.state else {
-            // TODO: make an error
-            return false;
-        };
-
-        !neighbours.is_empty()
-    }
-
-    pub fn is_parent(&self, last_forwarder: Ipv4Addr) -> bool {
+    #[inline]
+    /// If the network is established, returns the node's parent.
+    pub const fn get_parent(&self) -> Option<Ipv4Addr> {
         let State::Streaming { parent, .. } = &self.state else {
-            // println!(
-            //     "is_parent(self: {}, last_forwarder: {}) -> false (NOT STREAMING)",
-            //     self.address, last_forwarder
-            // );
-            // TODO: make an error
-            return false;
+            return None;
         };
 
-        // println!(
-        //     "is_parent(self: {}, last_forwarder: {}) -> {}",
-        //     self.address,
-        //     last_forwarder,
-        //     last_forwarder == *parent
-        // );
-
-        last_forwarder == *parent
+        Some(*parent)
     }
 
-    pub fn get_next_hops(&self, dst: Ipv4Addr) -> (&[Ipv4Addr], bool) {
-        if dst != self.group {
-            return (&[], false);
-        }
-
+    #[inline]
+    /// If the network is established, returnss the node's children.
+    pub const fn get_children(&self) -> Option<&[Ipv4Addr]> {
         let State::Streaming { neighbours, .. } = &self.state else {
-            // TODO: make an error / possibly true 'adressed to us' (second part of tuple)?
-            return (&[], false);
+            return None;
         };
 
-        (neighbours, true)
+        Some(neighbours.as_slice())
     }
 
+    #[inline]
+    /// Returns whether the network is established and the node has children (and is therefore a forwarder).
+    pub const fn has_children(&self) -> bool {
+        // Option::map_or is not const, so use match
+        match self.get_children() {
+            Some(children) => !children.is_empty(),
+            None => false,
+        }
+    }
+
+    #[inline]
+    /// If the network is established, returns the node's hop distance from the area source.
     pub const fn get_hop_distance(&self) -> Option<u16> {
         let State::Streaming { hop_distance, .. } = &self.state else {
             return None;
@@ -129,6 +120,9 @@ enum State {
 }
 
 impl<N: NodeInfo> Area<N> {
+    /// Handle a timeout event.
+    ///
+    #[doc = doc_handle_return!()]
     pub fn handle_timeout(&mut self) -> (Option<message::Message>, Option<time::Duration>) {
         match &mut self.state {
             State::Construction {
@@ -161,6 +155,9 @@ impl<N: NodeInfo> Area<N> {
         }
     }
 
+    /// Handle an incomming control [`Message`](message::Message).
+    ///
+    #[doc = doc_handle_return!()]
     pub fn handle_message(
         &mut self,
         m: message::Message,
@@ -174,6 +171,9 @@ impl<N: NodeInfo> Area<N> {
         }
     }
 
+    /// Handle an incomming [`AreaConstruction`](message::AreaConstruction) message.
+    ///
+    #[doc = doc_handle_return!()]
     pub fn handle_area_construction(
         &mut self,
         m: message::AreaConstruction,
@@ -241,6 +241,9 @@ impl<N: NodeInfo> Area<N> {
         }
     }
 
+    /// Handle an incomming [`JoinReport`](message::JoinReport) message.
+    ///
+    #[doc = doc_handle_return!()]
     pub fn handle_join_report(
         &mut self,
         mut m: message::JoinReport,
@@ -279,6 +282,9 @@ impl<N: NodeInfo> Area<N> {
         }
     }
 
+    /// Handle an incomming [`AreaInfo`](message::AreaInfo) message.
+    ///
+    #[doc = doc_handle_return!()]
     pub fn handle_area_info(
         &mut self,
         m: message::AreaInfo,

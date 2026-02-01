@@ -5,6 +5,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{Config, Network, NodeInfo, availability, message};
 
+/// Routing controller for an LCRT area source.
 pub struct AreaSource<N> {
     config: Config,
     address: Ipv4Addr,
@@ -14,6 +15,10 @@ pub struct AreaSource<N> {
 }
 
 impl<N: NodeInfo> AreaSource<N> {
+    /// Construct a new source area routing controller.
+    ///
+    /// # Panics
+    /// This will panic if `config` is not valid (see [`Config::is_valid`]).
     pub fn new(
         config: Config,
         node_info: N,
@@ -59,19 +64,25 @@ impl<N: NodeInfo> AreaSource<N> {
     }
 
     #[inline]
+    /// Get the node's address.
     pub const fn get_address(&self) -> Ipv4Addr {
         self.address
     }
 
     #[inline]
+    /// Get the group address for the area.
     pub const fn get_group(&self) -> Ipv4Addr {
         self.group
     }
 
+    #[inline]
+    /// Returns whether this routing controller has established an area and is able to send data streams.
     pub const fn is_streaming(&self) -> bool {
         matches!(&self.state, State::Streaming { .. })
     }
 
+    #[inline]
+    /// If the network is established, returns the network topology graph and [`message::NodeData`] map.
     pub const fn get_network(&self) -> Option<(&FxHashMap<Ipv4Addr, message::NodeData>, &Network)> {
         let State::Streaming { nodes, network, .. } = &self.state else {
             return None;
@@ -80,44 +91,24 @@ impl<N: NodeInfo> AreaSource<N> {
         Some((nodes, network))
     }
 
-    pub fn is_forwarder(&self, dst: Ipv4Addr) -> bool {
-        // println!(
-        //     "AreaSource::is_forwarder(self.group: {}, dst: {}) -> {}",
-        //     self.group,
-        //     dst,
-        //     self.group == dst
-        // );
-        if dst != self.group {
-            return false;
-        }
-
+    #[inline]
+    /// If the network is established, returnss the node's children.
+    pub const fn get_children(&self) -> Option<&[Ipv4Addr]> {
         let State::Streaming { neighbours, .. } = &self.state else {
-            // TODO: make an error
-            return false;
-        };
-
-        !neighbours.is_empty()
-    }
-
-    pub fn get_next_hops(&self, dst: Ipv4Addr) -> (&[Ipv4Addr], bool) {
-        if dst != self.group {
-            return (&[], false);
-        }
-
-        let State::Streaming { neighbours, .. } = &self.state else {
-            // TODO: make an error / possibly true 'adressed to us' (second part of tuple)?
-            return (&[], false);
-        };
-
-        (neighbours, true)
-    }
-
-    pub const fn get_hop_distance(&self) -> Option<u16> {
-        let State::Streaming { .. } = &self.state else {
             return None;
         };
 
-        Some(0)
+        Some(neighbours.as_slice())
+    }
+
+    #[inline]
+    /// Returns whether the network is established and the node has children (and is therefore a forwarder).
+    pub const fn has_children(&self) -> bool {
+        // Option::map_or is not const, so use match
+        match self.get_children() {
+            Some(children) => !children.is_empty(),
+            None => false,
+        }
     }
 }
 

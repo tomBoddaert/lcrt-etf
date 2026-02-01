@@ -4,6 +4,10 @@ use rustc_hash::FxHashMap;
 
 use crate::{Area, AreaSource, Network, NodeInfo, Response, message};
 
+/// Routing controller for an LCRT area member.
+///
+/// Created from an [`Area`] or [`AreaSource`].
+/// Can be created with [`Self::from`], [`Into<Self>::into`], or by constructing an enum variant.
 pub enum AreaAny<N> {
     Area(Area<N>),
     AreaSource(AreaSource<N>),
@@ -70,26 +74,40 @@ macro_rules! up_impl {
 
 impl<N: NodeInfo> AreaAny<N> {
     up_impl! {
+        /// Get the node's address.
         pub [const] fn get_address(&self) -> Ipv4Addr;
+        /// Get the group address for the area.
         pub [const] fn get_group(&self) -> Ipv4Addr;
+        /// Returns whether this routing controller has established an area and is able to send/receive data streams.
         pub [const] fn is_streaming(&self) -> bool;
+        /// If the network is established, returns the network topology graph and [`NodeData`](message::NodeData) map.
         pub [const] fn get_network(&self) -> Option<(&FxHashMap<Ipv4Addr, message::NodeData>, &Network)> ;
-        pub fn get_next_hops(&self, dst: Ipv4Addr) -> (&[Ipv4Addr], bool);
-        pub fn is_forwarder(&self, dst: Ipv4Addr) -> bool;
+        /// If the network is established, returnss the node's children.
+        pub [const] fn get_children(&self) -> Option<&[Ipv4Addr]>;
+        /// Returns whether the network is established and the node has children (and is therefore a forwarder).
+        pub [const] fn has_children(&self) -> bool;
 
+        /// Handle a timeout event.
+        ///
+        #[doc = doc_handle_return!()]
         pub fn handle_message(&mut self, m: message::Message) -> Response;
+        /// Handle an incomming control [`Message`](message::Message).
+        ///
+        #[doc = doc_handle_return!()]
         pub fn handle_timeout(&mut self) -> Response;
     }
 
     #[inline]
-    pub fn is_parent(&self, last_forwarder: Ipv4Addr) -> bool {
+    /// If the network is established and this is a non-source node, returns the node's parent.
+    pub const fn get_parent(&self) -> Option<Ipv4Addr> {
         match self {
-            Self::Area(area) => area.is_parent(last_forwarder),
-            Self::AreaSource(_) => false,
+            Self::Area(area) => area.get_parent(),
+            Self::AreaSource(_) => None,
         }
     }
 
     #[inline]
+    /// If the network is established, returns the node's hop distance from the area source.
     pub fn get_hop_distance(&self) -> Option<u16> {
         match self {
             Self::Area(area) => area.get_hop_distance(),

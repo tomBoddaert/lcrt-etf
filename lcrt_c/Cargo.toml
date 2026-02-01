@@ -1,6 +1,6 @@
 [package]
 name = "lcrt_c"
-version = "0.0.0"
+version = "0.0.1"
 authors.workspace = true
 edition.workspace = true
 description = "A C API for the LCRT routing algorithm"
