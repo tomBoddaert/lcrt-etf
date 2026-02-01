@@ -20,6 +20,8 @@ impl<N: NodeInfo> AreaSource<N> {
         address: Ipv4Addr,
         group: Ipv4Addr,
     ) -> (Self, Option<message::Message>, Option<time::Duration>) {
+        assert!(config.is_valid());
+
         let position = node_info.position();
 
         let mut nodes = FxHashMap::default();
@@ -54,6 +56,16 @@ impl<N: NodeInfo> AreaSource<N> {
             Some(m),
             Some(config.source_construct_timeout),
         )
+    }
+
+    #[inline]
+    pub const fn get_address(&self) -> Ipv4Addr {
+        self.address
+    }
+
+    #[inline]
+    pub const fn get_group(&self) -> Ipv4Addr {
+        self.group
     }
 
     pub const fn is_streaming(&self) -> bool {
@@ -182,24 +194,35 @@ impl<N: NodeInfo> AreaSource<N> {
                     extract_level(&mut potential_forwarders, nodes, l);
 
                     while !uncovered.is_empty() {
+                        // remove forwarders with no coverage
+                        potential_forwarders.retain(|a| {
+                            coverage.neighbors(nodes[a].coverage_index).next().is_some()
+                        });
+
                         // find forwarder with highest eta
                         let Some((fa, _)) = potential_forwarders
                             .iter()
+                            .copied()
                             .map(|a| {
-                                let children = coverage.neighbors(nodes[a].coverage_index).count();
+                                let children = coverage.neighbors(nodes[&a].coverage_index).count();
                                 let eta =
-                                    nodes[a].eta(u16::try_from(children).unwrap_or(u16::MAX), 0); // TODO: update interfering nodes
+                                    nodes[&a].eta(u16::try_from(children).unwrap_or(u16::MAX), 0); // TODO: update interfering nodes
                                 (a, eta)
                             })
                             .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
                         else {
                             // TODO: abandon uncovered nodes?
                             // If nodes are removed from the graph, switch to a StableGraph.
-                            todo!("deal with failed construction");
+                            // todo!("deal with failed construction");
+                            println!("WARNING: ABANDONING NODES {uncovered:?}");
+                            uncovered.clear();
+                            continue;
                         };
+                        // remove the chosen forwarder from the potential forwarders
+                        potential_forwarders.remove(&fa);
 
-                        let forwarder_index = new_nodes[fa].index;
-                        let forwarder_coverage_index = nodes[fa].coverage_index;
+                        let forwarder_index = new_nodes[&fa].index;
+                        let forwarder_coverage_index = nodes[&fa].coverage_index;
 
                         neighbours.extend(coverage.neighbors(forwarder_coverage_index));
 

@@ -70,6 +70,8 @@ macro_rules! up_impl {
 
 impl<N: NodeInfo> AreaAny<N> {
     up_impl! {
+        pub [const] fn get_address(&self) -> Ipv4Addr;
+        pub [const] fn get_group(&self) -> Ipv4Addr;
         pub [const] fn is_streaming(&self) -> bool;
         pub [const] fn get_network(&self) -> Option<(&FxHashMap<Ipv4Addr, message::NodeData>, &Network)> ;
         pub fn get_next_hops(&self, dst: Ipv4Addr) -> (&[Ipv4Addr], bool);

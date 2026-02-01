@@ -21,5 +21,5 @@ fn availability(capacity: f32, rate: f32) -> f32 {
 }
 
 fn eta(availability: f32, children: u16, interfering_nodes: u16) -> f32 {
-    f32::from(children) / f32::from(interfering_nodes) * availability
+    f32::from(children) / f32::from(1 + interfering_nodes) * availability
 }

@@ -14,6 +14,8 @@ pub struct Area<N> {
 
 impl<N: NodeInfo> Area<N> {
     pub const fn new(config: Config, node_info: N, address: Ipv4Addr, group: Ipv4Addr) -> Self {
+        assert!(config.is_valid());
+
         Self {
             config,
             address,
@@ -21,6 +23,16 @@ impl<N: NodeInfo> Area<N> {
             node_info,
             state: State::Startup,
         }
+    }
+
+    #[inline]
+    pub const fn get_address(&self) -> Ipv4Addr {
+        self.address
+    }
+
+    #[inline]
+    pub const fn get_group(&self) -> Ipv4Addr {
+        self.group
     }
 
     pub const fn is_streaming(&self) -> bool {
@@ -272,12 +284,19 @@ impl<N: NodeInfo> Area<N> {
         m: message::AreaInfo,
     ) -> (Option<message::Message>, Option<time::Duration>) {
         match &mut self.state {
-            State::Startup | State::Construction { .. } => todo!(),
+            State::Startup | State::Construction { .. } => {
+                println!("WARNING: NODE {} NOT IN AREA {}", self.address, self.group);
+                Default::default()
+            }
 
             State::AwaitingAreaInfo { hop_distance, .. } => {
                 let message::AreaInfo { network, nodes } = m;
 
-                let me = nodes[&self.address];
+                let Some(me) = nodes.get(&self.address) else {
+                    println!("WARNING: {} NOT INCLUDED IN AREA", self.address);
+                    self.state = State::Startup;
+                    return Default::default();
+                };
                 let neighbours: Vec<_> = network.neighbors(me.index).map(|i| network[i]).collect();
                 let mut parents = network.neighbors_directed(me.index, petgraph::Incoming);
                 let parent = parents
