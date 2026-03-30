@@ -1,6 +1,6 @@
 use glam::DVec3;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Sphere {
     pub o: DVec3,
     pub r: f64,
@@ -11,6 +11,12 @@ impl Sphere {
     #[inline]
     pub const fn new(o: DVec3, r: f64) -> Self {
         Self { o, r }
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn with_components(x: f64, y: f64, z: f64, r: f64) -> Self {
+        Self::new(DVec3::new(x, y, z), r)
     }
 
     #[must_use]

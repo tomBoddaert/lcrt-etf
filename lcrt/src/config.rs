@@ -21,6 +21,8 @@ pub struct Config {
     ///
     /// This **must** be greater than [`Self::construct_timeout`] and should scale with [`Self::k`].
     pub source_construct_timeout: Duration,
+    pub message_period: Duration,
+    pub gamma: NonZero<u8>,
 }
 
 impl Config {
@@ -32,6 +34,8 @@ impl Config {
     /// - [`Self::bitrate_capacity`] is normal (see [`f32::is_normal`]) with positive sign (see [`f32::is_sign_positive`]).
     /// - [`Self::construct_timeout`] is positive (see [`Duration::is_zero`]).
     /// - [`Self::source_construct_timeout`] is greater than [`Self::construct_timeout`].
+    /// - [`Self::message_period`] is positive (see [`Duration::is_zero`]).
+    /// - [`Self::gamma`] is less than `128`.
     pub const fn is_valid(&self) -> bool {
         let Self {
             k: _,
@@ -39,6 +43,8 @@ impl Config {
             bitrate_capacity,
             construct_timeout,
             source_construct_timeout,
+            message_period,
+            gamma,
         } = self;
 
         radius.is_normal()
@@ -49,5 +55,7 @@ impl Config {
             && !source_construct_timeout
                 .saturating_sub(*construct_timeout)
                 .is_zero() // source_construct_timeout < construct_timeout (implemented this way for const)
+            && !message_period.is_zero()
+            && gamma.get() < 128
     }
 }

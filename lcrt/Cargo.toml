@@ -1,6 +1,6 @@
 [package]
 name = "lcrt"
-version = "0.0.4"
+version = "0.0.5"
 authors.workspace = true
 edition.workspace = true
 description = "An implementation of the single-source, multicast, ad-hoc routing algorithm LCRT"
@@ -12,6 +12,7 @@ keywords = ["network", "protocol", "routing"]
 categories = ["network-programming"]
 
 [dependencies]
+common.workspace = true
 rustc-hash.workspace = true
 petgraph.workspace = true
 glam.workspace = true

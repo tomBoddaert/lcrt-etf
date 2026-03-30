@@ -10,20 +10,20 @@ fn main() {
     let cpp_config_patch_path = crate_dir.join("cppbindgen.toml.patch");
     let cpp_config_path = crate_dir.join("cppbindgen.toml");
 
-    println!(
-        "cargo::rerun-if-changed={}",
-        c_config_path
-            .file_name()
-            .expect("failed to get C config file name")
-            .display()
-    );
-    println!(
-        "cargo::rerun-if-changed={}",
-        cpp_config_patch_path
-            .file_name()
-            .expect("failed to get C++ config patch file name")
-            .display()
-    );
+    // println!(
+    //     "cargo::rerun-if-changed={}",
+    //     c_config_path
+    //         .file_name()
+    //         .expect("failed to get C config file name")
+    //         .display()
+    // );
+    // println!(
+    //     "cargo::rerun-if-changed={}",
+    //     cpp_config_patch_path
+    //         .file_name()
+    //         .expect("failed to get C++ config patch file name")
+    //         .display()
+    // );
 
     let c_config_str = fs::read_to_string(&c_config_path).expect("failed to read cbindgen.toml");
     let cpp_config_patch_str =

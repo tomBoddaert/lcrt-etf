@@ -1,9 +1,9 @@
-use std::{net::Ipv4Addr, time};
+use std::{net::Ipv4Addr, num::Wrapping};
 
 use petgraph::graph;
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use crate::{Config, Network, NodeInfo, availability, message};
+use crate::{Config, Network, NodeInfo, Response, TimeoutId, availability, message};
 
 /// Routing controller for an LCRT area source.
 pub struct AreaSource<N> {
@@ -24,7 +24,7 @@ impl<N: NodeInfo> AreaSource<N> {
         node_info: N,
         address: Ipv4Addr,
         group: Ipv4Addr,
-    ) -> (Self, Option<message::Message>, Option<time::Duration>) {
+    ) -> (Self, Response) {
         assert!(config.is_valid());
 
         let position = node_info.position();
@@ -48,8 +48,8 @@ impl<N: NodeInfo> AreaSource<N> {
         let m = message::AreaConstruction {
             ttl: config.k,
             position,
-        }
-        .into();
+        };
+        let t = (TimeoutId::Control, config.source_construct_timeout);
         (
             Self {
                 config,
@@ -58,8 +58,7 @@ impl<N: NodeInfo> AreaSource<N> {
                 node_info,
                 state: State::Construction { nodes, coverage },
             },
-            Some(m),
-            Some(config.source_construct_timeout),
+            (m, t).into(),
         )
     }
 
@@ -73,6 +72,16 @@ impl<N: NodeInfo> AreaSource<N> {
     /// Get the group address for the area.
     pub const fn get_group(&self) -> Ipv4Addr {
         self.group
+    }
+
+    #[inline]
+    pub const fn get_config(&self) -> &Config {
+        &self.config
+    }
+
+    #[inline]
+    pub const fn get_node_info(&self) -> &N {
+        &self.node_info
     }
 
     #[inline]
@@ -110,6 +119,17 @@ impl<N: NodeInfo> AreaSource<N> {
             None => false,
         }
     }
+
+    /// Returns the next packet ID in the stream.
+    pub fn next_packet_id(&mut self) -> Option<u8> {
+        let State::Streaming { next_packet_id, .. } = &mut self.state else {
+            return None;
+        };
+
+        let pid = next_packet_id.0;
+        *next_packet_id += 1;
+        Some(pid)
+    }
 }
 
 #[derive(Debug)]
@@ -119,9 +139,11 @@ enum State {
         coverage: petgraph::graph::Graph<Ipv4Addr, ()>,
     },
     Streaming {
+        area_info_id: Wrapping<u8>,
         nodes: FxHashMap<Ipv4Addr, message::NodeData>,
         network: graph::Graph<Ipv4Addr, ()>,
         neighbours: Vec<Ipv4Addr>,
+        next_packet_id: Wrapping<u8>,
     },
 }
 
@@ -135,7 +157,7 @@ struct ConstructionNode {
 }
 
 impl<N: NodeInfo> AreaSource<N> {
-    pub fn handle_timeout(&mut self) -> (Option<message::Message>, Option<time::Duration>) {
+    pub fn handle_timeout(&mut self, id: TimeoutId) -> Response {
         fn extract_level(
             set: &mut FxHashSet<Ipv4Addr>,
             nodes: &FxHashMap<Ipv4Addr, ConstructionNode>,
@@ -149,9 +171,12 @@ impl<N: NodeInfo> AreaSource<N> {
             );
         }
 
+        assert_eq!(id, TimeoutId::Control, "expected a control timeout");
+
         match &mut self.state {
             State::Construction { nodes, coverage } => {
                 // println!("LCRT DEBUG: CONSTRUCTING AREA WITH {} NODES", nodes.len());
+                println!("LCRT CONSTRUCTING AREA: \nnodes: {nodes:#?}\ncoverage: {coverage:#?}");
                 let mut network = petgraph::Graph::with_capacity(nodes.len(), 0);
                 let new_nodes: FxHashMap<Ipv4Addr, message::NodeData> = nodes
                     .iter()
@@ -235,29 +260,29 @@ impl<N: NodeInfo> AreaSource<N> {
                 let me = new_nodes[&self.address];
                 let neighbours: Vec<_> = network.neighbors(me.index).map(|i| network[i]).collect();
 
-                let m = message::AreaInfo {
+                let id = Wrapping(0);
+                let m = (!neighbours.is_empty()).then(|| message::AreaInfo {
+                    id,
                     network: network.clone(),
                     nodes: new_nodes.clone(),
-                }
-                .into();
+                });
 
                 self.state = State::Streaming {
+                    area_info_id: id,
                     nodes: new_nodes,
                     network,
                     neighbours,
+                    next_packet_id: Wrapping(0),
                 };
 
-                (Some(m), None)
+                m.into()
             }
 
             _ => todo!(),
         }
     }
 
-    pub fn handle_message(
-        &mut self,
-        m: message::Message,
-    ) -> (Option<message::Message>, Option<time::Duration>) {
+    pub fn handle_message(&mut self, m: message::Message) -> Response {
         match m {
             message::Message::AreaConstruction(_) | message::Message::AreaInfo(_) => {
                 // TODO: verify consistency?
@@ -265,13 +290,14 @@ impl<N: NodeInfo> AreaSource<N> {
             }
 
             message::Message::JoinReport(join_report) => self.handle_join_report(join_report),
+
+            message::Message::JoinArea(join_group) => self.handle_join_area(join_group),
+            message::Message::JoinAvailable(_) => Default::default(),
+            message::Message::JoinAccept(join_accept) => self.handle_join_accept(join_accept),
         }
     }
 
-    pub fn handle_join_report(
-        &mut self,
-        m: message::JoinReport,
-    ) -> (Option<message::Message>, Option<time::Duration>) {
+    pub fn handle_join_report(&mut self, m: message::JoinReport) -> Response {
         match &mut self.state {
             State::Construction { nodes, coverage } => {
                 let message::JoinReport {
@@ -282,6 +308,7 @@ impl<N: NodeInfo> AreaSource<N> {
                     interfering_neighbours,
                     ..
                 } = m;
+                println!("{m:?}");
 
                 // deduplicate
                 if nodes.contains_key(&address) {
@@ -317,13 +344,141 @@ impl<N: NodeInfo> AreaSource<N> {
 
                 nodes.insert(m.address, node);
 
-                (None, Some(self.config.source_construct_timeout))
+                (TimeoutId::Control, self.config.source_construct_timeout).into()
             }
 
             State::Streaming { .. } => {
                 // too late
                 // TODO: emit warning?
                 Default::default()
+            }
+        }
+    }
+
+    pub fn handle_join_area(&mut self, m: message::JoinArea) -> Response {
+        // are we within RTR?
+        let position = self.node_info.position();
+        if position.distance_squared(m.position) > self.config.radius * self.config.radius {
+            return Default::default();
+        }
+
+        message::JoinAvailable {
+            address: m.address,
+            parent: self.address,
+            hop_distance: 1,
+            confidence: 1.,
+        }
+        .into()
+    }
+
+    pub fn handle_join_accept(&mut self, m: message::JoinAccept) -> Response {
+        match &mut self.state {
+            State::Construction { .. } => todo!(),
+
+            State::Streaming {
+                area_info_id,
+                nodes,
+                network,
+                neighbours,
+                ..
+            } => {
+                // if we are not the parent and we are not the next forwarder, ignore it
+                if m.forwarder == m.address {
+                    if m.parent != self.address {
+                        return Response::default();
+                    }
+                    // TODO: temporarily add the node to the neighbours to start forwarding immediately
+                    // need to also accept messages on the other end
+                } else if !neighbours.contains(&m.forwarder) {
+                    return Response::default();
+                }
+
+                println!(
+                    "{} has received JoinAccept from {}",
+                    self.address, m.address
+                );
+
+                if let Some(entry) = nodes.remove(&m.address) {
+                    // remove subtree rooted at the node
+                    let mut to_remove = Vec::new();
+                    petgraph::visit::depth_first_search(
+                        &*network,
+                        std::iter::once(entry.index),
+                        |event| match event {
+                            petgraph::visit::DfsEvent::Discover(ix, _) => {
+                                to_remove.push(ix);
+                            }
+                            petgraph::visit::DfsEvent::TreeEdge(..)
+                            | petgraph::visit::DfsEvent::Finish(..) => {}
+                            petgraph::visit::DfsEvent::BackEdge(..)
+                            | petgraph::visit::DfsEvent::CrossForwardEdge(..) => {
+                                unreachable!("did not expect a non-tree edge")
+                            }
+                        },
+                    );
+
+                    #[cfg(debug_assertions)]
+                    {
+                        let parent = &nodes[&m.parent];
+                        debug_assert!(!to_remove.contains(&parent.index));
+                    }
+
+                    // removal must be done in reverse order
+                    to_remove.sort_unstable();
+                    for ix in to_remove.into_iter().rev() {
+                        let last_ix = network
+                            .node_indices()
+                            .next_back()
+                            .expect("expected network to contain at least one node");
+
+                        // set the last node's index to the removed index
+                        if ix != last_ix {
+                            let last_node = nodes
+                                .get_mut(&network[last_ix])
+                                .expect("expected node from network to exist in nodes map");
+                            last_node.index = ix;
+                        }
+
+                        // remove the node
+                        let id = network
+                            .remove_node(ix)
+                            .expect("expected node from network to exist in the network");
+                        println!("Removing node {id}");
+                        let removed = nodes.remove(&id);
+                        if id == m.address {
+                            debug_assert!(removed.is_none());
+                            debug_assert_eq!(ix, entry.index);
+                        } else {
+                            debug_assert_eq!(removed.map(|node| node.index), Some(ix));
+                        }
+                    }
+                }
+
+                let ix = network.add_node(m.address);
+                nodes.insert(
+                    m.address,
+                    message::NodeData {
+                        position: m.position,
+                        index: ix,
+                    },
+                );
+                let parent = nodes[&m.parent];
+                network.add_edge(parent.index, ix, ());
+
+                println!("{network:?}");
+
+                let me = nodes[&self.address];
+                neighbours.clear();
+                neighbours.extend(network.neighbors(me.index).map(|i| network[i]));
+
+                *area_info_id += 1;
+                (!neighbours.is_empty())
+                    .then(|| message::AreaInfo {
+                        id: *area_info_id,
+                        network: network.clone(),
+                        nodes: nodes.clone(),
+                    })
+                    .into()
             }
         }
     }

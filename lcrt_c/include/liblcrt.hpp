@@ -7,11 +7,46 @@
 #include <cstdint>
 
 
+struct EtfPath;
+
 struct LcrtArea;
+
+struct LcrtPosition {
+  double x;
+  double y;
+  double z;
+};
 
 struct LcrtMessage {
   uint8_t *data;
   size_t len;
+};
+
+struct LcrtTimeout {
+  uint8_t id;
+  uint64_t delay;
+};
+
+struct LcrtEvent {
+  enum class Tag {
+    None,
+    Parent,
+  };
+
+  struct Parent_Body {
+    uint32_t _0;
+  };
+
+  Tag tag;
+  union {
+    Parent_Body parent;
+  };
+};
+
+struct LcrtResponse {
+  LcrtMessage message;
+  LcrtTimeout timeout;
+  LcrtEvent event;
 };
 
 struct LcrtConfig {
@@ -29,12 +64,14 @@ struct LcrtConfig {
    * Nanoseconds.
    */
   uint64_t source_construct_timeout;
-};
-
-struct LcrtPosition {
-  double x;
-  double y;
-  double z;
+  /**
+   * Nanoseconds.
+   */
+  uint64_t message_period;
+  /**
+   * Must be non-zero.
+   */
+  uint8_t gamma;
 };
 
 struct LcrtNodeInfo {
@@ -44,19 +81,34 @@ struct LcrtNodeInfo {
   uint16_t (*interfering_neighbours)(void *ctx);
 };
 
+static const LcrtMessage LCRT_MESSAGE_NULL = LcrtMessage{
+  /* .data = */ (uint8_t*)0,
+  /* .len = */ 0
+};
+
+static const LcrtTimeout LCRT_TIMEOUT_NULL = LcrtTimeout{
+  /* .id = */ 0,
+  /* .delay = */ 0
+};
+
 
 extern "C" {
+
+EtfPath *etf_find_path(const LcrtArea *area, LcrtPosition to);
+
+void etf_path_drop(EtfPath *path);
+
+bool etf_path_next(EtfPath *path, LcrtPosition *position, uint32_t *forwarder);
+
+void lcrt_area_change_parent(LcrtArea *area, uint32_t parent, LcrtResponse *response);
 
 void lcrt_area_drop(LcrtArea *area);
 
 bool lcrt_area_get_hop_distance(const LcrtArea *area, uint16_t *hop_distance);
 
-void lcrt_area_handle_message(LcrtArea *area,
-                              LcrtMessage incoming,
-                              LcrtMessage *message,
-                              uint64_t *delay);
+void lcrt_area_handle_message(LcrtArea *area, LcrtMessage incoming, LcrtResponse *response);
 
-void lcrt_area_handle_timeout(LcrtArea *area, LcrtMessage *message, uint64_t *delay);
+void lcrt_area_handle_timeout(LcrtArea *area, uint8_t timeout_id, LcrtResponse *response);
 
 bool lcrt_area_is_forwarder(const LcrtArea *area, uint32_t dst);
 
@@ -64,12 +116,15 @@ bool lcrt_area_is_parent(const LcrtArea *area, uint32_t last_forwarder);
 
 LcrtArea *lcrt_area_new(LcrtConfig config, LcrtNodeInfo node, uint32_t address, uint32_t group);
 
+bool lcrt_area_next_packet_id(LcrtArea *area, uint8_t *id);
+
+void lcrt_area_notify_received_packet(LcrtArea *area, uint8_t id, LcrtResponse *response);
+
 LcrtArea *lcrt_area_source_new(LcrtConfig config,
                                LcrtNodeInfo node,
                                uint32_t address,
                                uint32_t group,
-                               LcrtMessage *message,
-                               uint64_t *delay);
+                               LcrtResponse *response);
 
 void lcrt_debug_config(LcrtConfig config);
 

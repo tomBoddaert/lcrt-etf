@@ -2,7 +2,7 @@ use std::net::Ipv4Addr;
 
 use rustc_hash::FxHashMap;
 
-use crate::{Area, AreaSource, Network, NodeInfo, Response, message};
+use crate::{Area, AreaSource, Config, Network, NodeInfo, Response, Timeout, TimeoutId, message};
 
 /// Routing controller for an LCRT area member.
 ///
@@ -78,6 +78,8 @@ impl<N: NodeInfo> AreaAny<N> {
         pub [const] fn get_address(&self) -> Ipv4Addr;
         /// Get the group address for the area.
         pub [const] fn get_group(&self) -> Ipv4Addr;
+        pub [const] fn get_config(&self) -> &Config;
+        pub [const] fn get_node_info(&self) -> &N;
         /// Returns whether this routing controller has established an area and is able to send/receive data streams.
         pub [const] fn is_streaming(&self) -> bool;
         /// If the network is established, returns the network topology graph and [`NodeData`](message::NodeData) map.
@@ -94,7 +96,7 @@ impl<N: NodeInfo> AreaAny<N> {
         /// Handle an incomming control [`Message`](message::Message).
         ///
         #[doc = doc_handle_return!()]
-        pub fn handle_timeout(&mut self) -> Response;
+        pub fn handle_timeout(&mut self, id: TimeoutId) -> Response;
     }
 
     #[inline]
@@ -112,6 +114,31 @@ impl<N: NodeInfo> AreaAny<N> {
         match self {
             Self::Area(area) => area.get_hop_distance(),
             Self::AreaSource(area_source) => area_source.is_streaming().then_some(0),
+        }
+    }
+
+    #[inline]
+    /// If the node is a source node and the network is established, returns the next packet ID in the stream.
+    pub fn next_packet_id(&mut self) -> Option<u8> {
+        match self {
+            Self::Area(_) => None,
+            Self::AreaSource(area_source) => area_source.next_packet_id(),
+        }
+    }
+
+    #[inline]
+    pub fn notify_received_packet(&mut self, id: u8) -> Option<Timeout> {
+        match self {
+            Self::Area(area) => area.notify_received_packet(id),
+            Self::AreaSource(_) => None,
+        }
+    }
+
+    #[inline]
+    pub fn change_parent(&mut self, parent: Ipv4Addr) -> Option<message::Message> {
+        match self {
+            Self::Area(area) => area.change_parent(parent),
+            Self::AreaSource(_) => None,
         }
     }
 }

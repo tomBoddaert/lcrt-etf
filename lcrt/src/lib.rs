@@ -2,7 +2,7 @@
 //!
 //! Based on the paper "[Resource-Aware Video Multicasting via Access Gateways in Wireless Mesh Networks](https://www.doi.org/10.1109/ICNP.2008.4697023)" by W. Tu, C. J. Sreenan, C. T. Chou, A. Misra and S. Jha, published in 2008 IEEE International Conference on Network Protocols, pp. 43-52. doi: [10.1109/ICNP.2008.4697023](https://www.doi.org/10.1109/ICNP.2008.4697023).
 
-use std::{net::Ipv4Addr, time};
+use std::net::Ipv4Addr;
 
 use petgraph::graph;
 
@@ -22,20 +22,18 @@ mod area_source;
 mod config;
 pub mod message;
 mod node_info;
+mod response;
+// mod timeouts;
 
 pub use area::Area;
 pub use area_any::AreaAny;
 pub use area_source::AreaSource;
 pub use config::Config;
 pub use node_info::NodeInfo;
+pub use response::{Event, Response, Timeout, TimeoutId};
 
 /// A graph representing an LCRT area network.
 pub type Network = graph::Graph<Ipv4Addr, ()>;
-/// The response from `handle_*` functions.
-///
-/// If a message is returned, it must be broadcast to neighbours.
-/// If a duration is returned, the area's `handle_timeout` must be called after that time. This **must override** any timers previously set by the area controller.
-pub type Response = (Option<message::Message>, Option<time::Duration>);
 
 fn availability(capacity: f32, rate: f32) -> f32 {
     capacity / rate

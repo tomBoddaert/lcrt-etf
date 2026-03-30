@@ -1,62 +1,58 @@
+use std::ops::Index;
+
+use common::AncestorWalker;
 use glam::DVec3;
 use petgraph::{
-    csr,
-    visit::{self, GraphBase, Walker},
+    csr::IndexType,
+    visit::{GraphBase, IntoNeighborsDirected, Walker},
 };
 
 pub mod geo;
-pub mod intersections;
+mod intersections;
+mod path;
 mod straight;
-pub use intersections::Intersections;
-pub use straight::get_straight_trajectory;
+pub use crate::{intersections::Intersections, straight::get_straight_trajectory};
 
-use crate::{
-    geo::{Line, Sphere},
-    intersections::{Path, PathIterator},
-};
+use crate::{geo::Sphere, path::Path};
 
-#[derive(Clone, Copy, Debug)]
-pub struct AncestorWalker<Id> {
-    node: Id,
-}
-
-impl<G> Walker<G> for AncestorWalker<G::NodeId>
-where
-    G: GraphBase + visit::IntoNeighborsDirected,
-{
-    type Item = G::NodeId;
-
-    fn walk_next(&mut self, context: G) -> Option<Self::Item> {
-        let mut neighbours = context.neighbors_directed(self.node, petgraph::Direction::Incoming);
-        self.node = neighbours.next()?;
-        debug_assert!(
-            neighbours.next().is_none(),
-            "expected the network to be a tree"
-        );
-        Some(self.node)
-    }
-}
-
-pub fn get_ancestor_path<G, Id>(
-    network: G,
-    connected: G::NodeId,
+#[must_use]
+pub fn get_ancestor_path<'n, G, Id>(
+    // nodes: &'n [(Id, Sphere)],
+    network: &'n G,
+    start: <&'n G as GraphBase>::NodeId,
     b: DVec3,
-) -> Option<Vec<(Id, Sphere)>>
+) -> Option<Path<'n, Id, G>>
 where
-    G: visit::IntoNeighborsDirected
-        + petgraph::data::DataMap
-        + visit::Data<NodeWeight = (Id, Sphere), EdgeWeight = ()>,
+    &'n G: IntoNeighborsDirected,
+    G: Index<<&'n G as GraphBase>::NodeId, Output = (Id, Sphere)>,
     Id: Clone,
 {
-    let walker = AncestorWalker { node: connected }.iter(network).map(|id| {
-        network
-            .node_weight(id)
-            .expect("expected parent node to exist in network")
-    });
-    let (i, _) = walker
-        .clone()
-        .enumerate()
-        .find(|(_, (_, s))| s.contains(b))?;
+    let walker = AncestorWalker::new(start).iter(network);
+    //     .map(|ix| {
+    //     // network
+    //     //     .node_weight(id)
+    //     //     .expect("expected parent node to exist in network")
+    //     &nodes[ix.index()]
+    // });
+    let (i, _) = walker.clone().enumerate().find(|(_, ix)| {
+        network[*ix]
+            // .node_weight(*ix)
+            // .expect("expected parent node top exist in network")
+            .1
+            .contains(b)
+    })?;
 
-    Some(walker.take(i + 1).cloned().collect())
+    // let mut nodes: Vec<(Id, Sphere)> = Vec::with_capacity(i + 2);
+    // nodes.push(nodes[start.index()].clone());
+    // nodes.extend(walker.take(i + 1).cloned());
+    let mut path = Vec::with_capacity(i + 2);
+    path.push(start);
+    path.extend(walker.take(i + 1));
+
+    Some(Path {
+        // nodes: &[],
+        network,
+        path,
+        _ids: std::marker::PhantomData,
+    })
 }

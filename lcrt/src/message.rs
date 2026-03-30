@@ -1,6 +1,9 @@
 //! LCRT area control message definitions.
 
-use std::{net::Ipv4Addr, num::NonZero};
+use std::{
+    net::Ipv4Addr,
+    num::{NonZero, Wrapping},
+};
 
 use petgraph::graph;
 use rustc_hash::FxHashMap;
@@ -35,6 +38,8 @@ pub struct JoinReport {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 /// The message signalling the creation of an LCRT area.
 pub struct AreaInfo {
+    /// Id for this area info.
+    pub id: Wrapping<u8>,
     /// Network routing graph.
     pub network: graph::Graph<Ipv4Addr, ()>,
     /// [`NodeData`] map.
@@ -50,12 +55,37 @@ pub struct NodeData {
     pub index: graph::NodeIndex,
 }
 
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+pub struct JoinArea {
+    pub address: Ipv4Addr,
+    pub position: glam::DVec3,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+pub struct JoinAvailable {
+    pub address: Ipv4Addr,
+    pub parent: Ipv4Addr,
+    pub hop_distance: u16,
+    pub confidence: f32,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+pub struct JoinAccept {
+    pub address: Ipv4Addr,
+    pub position: glam::DVec3,
+    pub parent: Ipv4Addr,
+    pub forwarder: Ipv4Addr,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 /// An LCRT area control message.
 pub enum Message {
     AreaConstruction(AreaConstruction),
     JoinReport(JoinReport),
     AreaInfo(AreaInfo),
+    JoinArea(JoinArea),
+    JoinAvailable(JoinAvailable),
+    JoinAccept(JoinAccept),
 }
 
 macro_rules! into_message_impl {
@@ -77,4 +107,7 @@ into_message_impl! {
     AreaConstruction => Message::AreaConstruction,
     JoinReport => Message::JoinReport,
     AreaInfo => Message::AreaInfo,
+    JoinArea => Message::JoinArea,
+    JoinAvailable => Message::JoinAvailable,
+    JoinAccept => Message::JoinAccept,
 }

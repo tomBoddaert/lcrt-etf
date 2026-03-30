@@ -1,6 +1,6 @@
 [package]
 name = "etf"
-version = "0.0.0"
+version = "0.0.1"
 authors.workspace = true
 edition.workspace = true
 description = "An implementation of the seamless UAV-trajectory algorithm ETF"
@@ -10,9 +10,10 @@ repository.workspace = true
 license.workspace = true
 keywords = ["uav", "path", "pathfinding", "network"]
 categories = ["aerospace::drones", "aerospace::unmanned-aerial-vehicles", "network-programming"]
-exclude = ["test.ggb"]
+exclude = ["test.ggb", "examples/tree.ggb"]
 
 [dependencies]
+common.workspace = true
 lcrt.workspace = true
 rustc-hash.workspace = true
 glam.workspace = true

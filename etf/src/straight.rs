@@ -1,6 +1,7 @@
 use crate::geo::{Line, Secant, Sphere};
 
-pub fn get_straight_trajectory<Id, N>(line: Line, nodes: N) -> Option<Vec<(Id, f64)>>
+#[must_use]
+pub fn get_straight_trajectory<Id, N>(line: Line, nodes: N) -> Option<Vec<(glam::DVec3, Id)>>
 where
     N: IntoIterator<Item = (Id, Sphere)>,
 {
@@ -29,7 +30,7 @@ where
 
         // TODO: use t.midpoint(tc) except on the first?
         // changes.push((id, t, line.interpolate(t)));
-        changes.push((id, t));
+        changes.push((line.interpolate(t), id));
 
         if td >= line.abl {
             return Some(changes);
@@ -68,13 +69,14 @@ mod test {
             changes
                 .iter()
                 .zip(spheres)
-                .all(|(change, sphere)| change.0 == sphere.0)
+                .all(|(change, sphere)| change.1 == sphere.0)
         );
         assert!(
             changes
                 .iter()
                 .copied()
-                .map(|(_, t)| line.interpolate(t))
+                // .map(|(_, t)| line.interpolate(t))
+                .map(|(p, _)| p)
                 .zip([
                     line.a,
                     DVec3::new(-0.810_766_901, -2.207_177_934, -0.405_383_451,),
