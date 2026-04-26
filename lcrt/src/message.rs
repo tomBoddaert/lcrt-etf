@@ -5,7 +5,7 @@ use std::{
     num::{NonZero, Wrapping},
 };
 
-use petgraph::graph;
+use petgraph::stable_graph;
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 
@@ -41,7 +41,7 @@ pub struct AreaInfo {
     /// Id for this area info.
     pub id: Wrapping<u8>,
     /// Network routing graph.
-    pub network: graph::Graph<Ipv4Addr, ()>,
+    pub network: stable_graph::StableGraph<Ipv4Addr, ()>, // TODO: switch back to regular graph / CSR
     /// [`NodeData`] map.
     pub nodes: FxHashMap<Ipv4Addr, NodeData>,
 }
@@ -52,7 +52,7 @@ pub struct NodeData {
     /// The node's position.
     pub position: glam::DVec3,
     /// The node's graph index in the network routing graph (from [`AreaInfo::network`]).
-    pub index: graph::NodeIndex,
+    pub index: stable_graph::NodeIndex,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]

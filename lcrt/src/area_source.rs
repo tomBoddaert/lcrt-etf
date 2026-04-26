@@ -1,6 +1,6 @@
 use std::{net::Ipv4Addr, num::Wrapping};
 
-use petgraph::graph;
+use petgraph::stable_graph;
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{Config, Network, NodeInfo, Response, TimeoutId, availability, message};
@@ -30,7 +30,7 @@ impl<N: NodeInfo> AreaSource<N> {
         let position = node_info.position();
 
         let mut nodes = FxHashMap::default();
-        let mut coverage = petgraph::Graph::new();
+        let mut coverage = petgraph::stable_graph::StableGraph::new();
 
         // add the source to the coverage graph and nodes map
         let coverage_index = coverage.add_node(address);
@@ -136,12 +136,12 @@ impl<N: NodeInfo> AreaSource<N> {
 enum State {
     Construction {
         nodes: FxHashMap<Ipv4Addr, ConstructionNode>,
-        coverage: petgraph::graph::Graph<Ipv4Addr, ()>,
+        coverage: petgraph::stable_graph::StableGraph<Ipv4Addr, ()>,
     },
     Streaming {
         area_info_id: Wrapping<u8>,
         nodes: FxHashMap<Ipv4Addr, message::NodeData>,
-        network: graph::Graph<Ipv4Addr, ()>,
+        network: stable_graph::StableGraph<Ipv4Addr, ()>,
         neighbours: Vec<Ipv4Addr>,
         next_packet_id: Wrapping<u8>,
     },
@@ -153,7 +153,7 @@ struct ConstructionNode {
     position: glam::DVec3,
     availability: f32,
     interfering_neighbours: u16,
-    coverage_index: graph::NodeIndex,
+    coverage_index: stable_graph::NodeIndex,
 }
 
 impl<N: NodeInfo> AreaSource<N> {
@@ -177,8 +177,8 @@ impl<N: NodeInfo> AreaSource<N> {
             State::Construction { nodes, coverage } => {
                 // println!("LCRT DEBUG: CONSTRUCTING AREA WITH {} NODES", nodes.len());
                 println!("LCRT CONSTRUCTING AREA: \nnodes: {nodes:#?}\ncoverage: {coverage:#?}");
-                let mut network = petgraph::Graph::with_capacity(nodes.len(), 0);
-                let new_nodes: FxHashMap<Ipv4Addr, message::NodeData> = nodes
+                let mut network = stable_graph::StableGraph::with_capacity(nodes.len(), 0);
+                let mut new_nodes: FxHashMap<Ipv4Addr, message::NodeData> = nodes
                     .iter()
                     .map(|(a, n)| {
                         (
@@ -199,13 +199,10 @@ impl<N: NodeInfo> AreaSource<N> {
 
                 // TODO: use rayon?
 
-                let mut l = levels;
                 let mut uncovered = FxHashSet::default();
                 let mut potential_forwarders = FxHashSet::default();
                 let mut neighbours = Vec::new();
-                while let Some(new_l) = l.checked_sub(1) {
-                    l = new_l;
-
+                for l in (0..levels).rev() {
                     extract_level(&mut uncovered, nodes, l + 1);
                     extract_level(&mut potential_forwarders, nodes, l);
 
@@ -230,8 +227,15 @@ impl<N: NodeInfo> AreaSource<N> {
                             // TODO: abandon uncovered nodes?
                             // If nodes are removed from the graph, switch to a StableGraph.
                             // todo!("deal with failed construction");
-                            println!("WARNING: ABANDONING NODES {uncovered:?}");
-                            uncovered.clear();
+                            print!("WARNING: ABANDONING NODES ");
+                            for abandoned in uncovered.drain() {
+                                let root = new_nodes[&abandoned].index;
+                                delete_tree(&mut network, &mut new_nodes, root);
+                                // new_nodes
+                                //     .remove(&abandoned)
+                                //     .expect("expected abandoned node to be in the map of nodes");
+                            }
+                            println!();
                             continue;
                         };
                         // remove the chosen forwarder from the potential forwarders
@@ -247,7 +251,7 @@ impl<N: NodeInfo> AreaSource<N> {
                             network.add_edge(forwarder_index, new_nodes[&child].index, ());
                         }
 
-                        neighbours.sort_unstable(); // nodes must be removed in reverse-index order
+                        // neighbours.sort_unstable(); // nodes must be removed in reverse-index order
                         for ni in neighbours.iter().copied().rev() {
                             coverage.remove_node(ni);
                         }
@@ -496,4 +500,23 @@ impl ConstructionNode {
     fn covers(&self, other: &Self, radius: f64) -> bool {
         self.position.distance_squared(other.position) <= radius * radius
     }
+}
+
+fn delete_tree(
+    graph: &mut stable_graph::StableGraph<Ipv4Addr, ()>,
+    nodes: &mut FxHashMap<Ipv4Addr, message::NodeData>,
+    root: stable_graph::NodeIndex,
+) {
+    let id = *graph
+        .node_weight(root)
+        .expect("expected node to remove to exist in network");
+    print!("{}, ", id);
+
+    let mut neighbours = graph.neighbors(root).detach();
+    while let Some(neighbour) = neighbours.next_node(graph) {
+        delete_tree(graph, nodes, neighbour);
+    }
+
+    nodes.remove(&id);
+    graph.remove_node(root);
 }

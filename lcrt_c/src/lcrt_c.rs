@@ -220,8 +220,8 @@ pub unsafe extern "C" fn lcrt_area_change_parent(
 #[derive(Clone, Copy, Debug, Default)]
 #[repr(C)]
 pub struct LcrtMessage {
-    data: *mut u8,
-    len: usize,
+    pub data: *mut u8,
+    pub len: usize,
 }
 
 pub const LCRT_MESSAGE_NULL: LcrtMessage = LcrtMessage {
@@ -290,8 +290,8 @@ pub unsafe extern "C" fn lcrt_message_drop(m: LcrtMessage) {
 #[derive(Clone, Copy, Debug, Default)]
 #[repr(C)]
 pub struct LcrtTimeout {
-    id: u8,
-    delay: u64,
+    pub id: u8,
+    pub delay: u64,
 }
 
 pub const LCRT_TIMEOUT_NULL: LcrtTimeout = LcrtTimeout { id: 0, delay: 0 };
@@ -333,9 +333,9 @@ impl From<Option<lcrt::Event>> for LcrtEvent {
 #[derive(Clone, Copy, Debug, Default)]
 #[repr(C)]
 pub struct LcrtResponse {
-    message: LcrtMessage,
-    timeout: LcrtTimeout,
-    event: LcrtEvent,
+    pub message: LcrtMessage,
+    pub timeout: LcrtTimeout,
+    pub event: LcrtEvent,
 }
 
 unsafe fn write_response(r: lcrt::Response, response: *mut LcrtResponse) {

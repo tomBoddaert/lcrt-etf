@@ -4,7 +4,7 @@
 
 use std::net::Ipv4Addr;
 
-use petgraph::graph;
+use petgraph::stable_graph;
 
 macro_rules! doc_handle_return {
     () => {
@@ -23,7 +23,6 @@ mod config;
 pub mod message;
 mod node_info;
 mod response;
-// mod timeouts;
 
 pub use area::Area;
 pub use area_any::AreaAny;
@@ -33,7 +32,7 @@ pub use node_info::NodeInfo;
 pub use response::{Event, Response, Timeout, TimeoutId};
 
 /// A graph representing an LCRT area network.
-pub type Network = graph::Graph<Ipv4Addr, ()>;
+pub type Network = stable_graph::StableGraph<Ipv4Addr, ()>; // TODO: switch to regular graph / CSR
 
 fn availability(capacity: f32, rate: f32) -> f32 {
     capacity / rate
