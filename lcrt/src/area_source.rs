@@ -176,7 +176,7 @@ impl<N: NodeInfo> AreaSource<N> {
         match &mut self.state {
             State::Construction { nodes, coverage } => {
                 // println!("LCRT DEBUG: CONSTRUCTING AREA WITH {} NODES", nodes.len());
-                println!("LCRT CONSTRUCTING AREA: \nnodes: {nodes:#?}\ncoverage: {coverage:#?}");
+                // println!("LCRT CONSTRUCTING AREA: \nnodes: {nodes:#?}\ncoverage: {coverage:#?}");
                 let mut network = stable_graph::StableGraph::with_capacity(nodes.len(), 0);
                 let mut new_nodes: FxHashMap<Ipv4Addr, message::NodeData> = nodes
                     .iter()
@@ -270,6 +270,7 @@ impl<N: NodeInfo> AreaSource<N> {
                     network: network.clone(),
                     nodes: new_nodes.clone(),
                 });
+                // println!("{m:?}");
 
                 self.state = State::Streaming {
                     area_info_id: id,
@@ -312,7 +313,7 @@ impl<N: NodeInfo> AreaSource<N> {
                     interfering_neighbours,
                     ..
                 } = m;
-                println!("{m:?}");
+                // println!("{m:?}");
 
                 // deduplicate
                 if nodes.contains_key(&address) {
@@ -397,10 +398,10 @@ impl<N: NodeInfo> AreaSource<N> {
                     return Response::default();
                 }
 
-                println!(
-                    "{} has received JoinAccept from {}",
-                    self.address, m.address
-                );
+                // println!(
+                //     "{} has received JoinAccept from {}",
+                //     self.address, m.address
+                // );
 
                 if let Some(entry) = nodes.remove(&m.address) {
                     // remove subtree rooted at the node
@@ -428,26 +429,26 @@ impl<N: NodeInfo> AreaSource<N> {
                     }
 
                     // removal must be done in reverse order
-                    to_remove.sort_unstable();
+                    // to_remove.sort_unstable();
                     for ix in to_remove.into_iter().rev() {
-                        let last_ix = network
-                            .node_indices()
-                            .next_back()
-                            .expect("expected network to contain at least one node");
+                        // let last_ix = network
+                        //     .node_indices()
+                        //     .next_back()
+                        //     .expect("expected network to contain at least one node");
 
-                        // set the last node's index to the removed index
-                        if ix != last_ix {
-                            let last_node = nodes
-                                .get_mut(&network[last_ix])
-                                .expect("expected node from network to exist in nodes map");
-                            last_node.index = ix;
-                        }
+                        // // set the last node's index to the removed index
+                        // if ix != last_ix {
+                        //     let last_node = nodes
+                        //         .get_mut(&network[last_ix])
+                        //         .expect("expected node from network to exist in nodes map");
+                        //     last_node.index = ix;
+                        // }
 
                         // remove the node
                         let id = network
                             .remove_node(ix)
                             .expect("expected node from network to exist in the network");
-                        println!("Removing node {id}");
+                        // println!("Removing node {id}");
                         let removed = nodes.remove(&id);
                         if id == m.address {
                             debug_assert!(removed.is_none());
@@ -469,7 +470,7 @@ impl<N: NodeInfo> AreaSource<N> {
                 let parent = nodes[&m.parent];
                 network.add_edge(parent.index, ix, ());
 
-                println!("{network:?}");
+                // println!("{network:?}");
 
                 let me = nodes[&self.address];
                 neighbours.clear();
