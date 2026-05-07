@@ -2,14 +2,11 @@ use std::ops::Index;
 
 use common::AncestorWalker;
 use glam::DVec3;
-use petgraph::{
-    csr::IndexType,
-    visit::{GraphBase, IntoNeighborsDirected, Walker},
-};
+use petgraph::visit::{GraphBase, IntoNeighborsDirected, Walker};
 
 pub mod geo;
 mod intersections;
-mod path;
+pub mod path;
 mod straight;
 pub use crate::{intersections::Intersections, straight::get_straight_trajectory};
 
