@@ -1,4 +1,4 @@
-# LCRT C API
+# C API
+This library exposes the LCRT and ETF libraries to C. For more detail on the wider project, see the [root README](../README.md).
 
-## Versioning
-Versions `0.0.x` may contain some working sections but are unlikely to work in general and probably contain sections that are incorrectly implemented.
+This aims to mostly mirror the Rust API.
