@@ -31,11 +31,11 @@ These libraries are dual-licensed under either the [MIT license](LICENSE_MIT) or
 Integration modules may be licensed under different, compatible licenses. For our integration modules, see their respective repositories.
 
 ## References
-### ETF
+### 1 ETF
 W. Tu, "Resource-efficient seamless transitions for high-performance multi-hop UAV multicasting," in Computer Networks, vol. 213, 2022, 109051, ISSN 1389–1286, <https://doi.org/10.1016/j.comnet.2022.109051>.
 
-### LCRT
+### 2 LCRT
 W. Tu, C. J. Sreenan, C. T. Chou, A. Misra and S. Jha, "Resource-Aware Video Multicasting via Access Gateways in Wireless Mesh Networks," in IEEE Transactions on Mobile Computing, vol. 11, no. 6, pp. 881–895, June 2012, <https://doi.org/10.1109/TMC.2011.103>.
 
-[1]: #ETF
-[2]: #LCRT
+[1]: #1-ETF
+[2]: #2-LCRT
