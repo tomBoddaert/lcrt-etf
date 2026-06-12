@@ -494,7 +494,7 @@ impl ConstructionNode {
         crate::eta(
             self.availability,
             children,
-            self.interfering_neighbours + added_interfering_nodes,
+            f32::from(self.interfering_neighbours) + f32::from(added_interfering_nodes),
         )
     }
 

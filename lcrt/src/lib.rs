@@ -20,6 +20,7 @@ mod area;
 mod area_any;
 mod area_source;
 mod config;
+mod construction;
 pub mod message;
 mod node_info;
 mod response;
@@ -38,6 +39,7 @@ fn availability(capacity: f32, rate: f32) -> f32 {
     capacity / rate
 }
 
-fn eta(availability: f32, children: u16, interfering_nodes: u16) -> f32 {
-    f32::from(children) / f32::from(1 + interfering_nodes) * availability
+fn eta(availability: f32, children: u16, interfering_nodes: f32) -> f32 {
+    // add 1 to interfering nodes to avoid divide by zero
+    f32::from(children) / (1. + interfering_nodes) * availability
 }
