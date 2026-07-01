@@ -1,6 +1,6 @@
 [package]
 name = "common"
-version = "0.0.0"
+version = "0.0.1"
 authors.workspace = true
 edition.workspace = true
 description = "Common types and utilities for the LCRT and ETF crates"
@@ -9,6 +9,7 @@ license.workspace = true
 
 [dependencies]
 petgraph.workspace = true
+glam.workspace = true
 
 [lints]
 workspace = true

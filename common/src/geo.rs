@@ -21,7 +21,13 @@ impl Sphere {
 
     #[must_use]
     #[inline]
-    // If the two spheres intersect with a lens of non-zero volume, returns the distance between their centres.
+    pub const fn radius2(&self) -> f64 {
+        self.r * self.r
+    }
+
+    #[must_use]
+    #[inline]
+    /// If the two spheres intersect with a lens of non-zero volume, returns the distance between their centres.
     pub fn intersection_distance(&self, other: &Self) -> Option<f64> {
         let r = self.r + other.r;
         let d2 = self.o.distance_squared(other.o);
@@ -30,8 +36,19 @@ impl Sphere {
 
     #[must_use]
     #[inline]
+    /// Returns whether each sphere contains the origin of the other if they intersect.
+    ///
+    /// If the two spheres do not intersect, this returns [`None`].
+    pub fn intersections(&self, other: &Self) -> Option<(bool, bool)> {
+        let r = self.r + other.r;
+        let d2 = self.o.distance_squared(other.o);
+        (d2 < r * r).then(|| (d2 < self.radius2(), d2 < other.radius2()))
+    }
+
+    #[must_use]
+    #[inline]
     pub fn contains(&self, p: DVec3) -> bool {
-        self.o.distance_squared(p) < self.r * self.r
+        self.o.distance_squared(p) < self.radius2()
     }
 
     #[must_use]
@@ -88,24 +105,6 @@ impl Line {
     pub fn interpolate(&self, t: f64) -> DVec3 {
         self.a + t * self.abn
     }
-
-    // #[must_use]
-    // #[inline]
-    // /// Get the secant intersection with the `sphere`.
-    // ///
-    // /// Returns [`None`] if no such intersection exists.
-    // pub fn sphere_intersection(&self, sphere: Sphere) -> Option<Secant> {
-    //     let ao = sphere.o - self.a;
-    //     let tm = ao.dot(self.abn);
-    //     let m = self.interpolate(tm);
-    //     let k2 = (m - sphere.o).length_squared();
-    //     let l2 = sphere.r.mul_add(sphere.r, -k2);
-
-    //     try_sqrt(l2).map(|l| Secant {
-    //         tc: tm - l,
-    //         td: tm + l,
-    //     })
-    // }
 
     #[must_use]
     #[inline]

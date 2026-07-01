@@ -1,5 +1,7 @@
 use petgraph::visit::{IntoNeighborsDirected, Walker};
 
+pub mod geo;
+
 #[derive(Clone, Copy, Debug)]
 pub struct AncestorWalker<Ix> {
     node: Ix,
