@@ -1,4 +1,4 @@
-use crate::geo::{Line, Secant, Sphere};
+use common::geo::{Line, Secant, Sphere};
 
 #[must_use]
 pub fn get_straight_trajectory<Id, N>(line: Line, nodes: N) -> Option<Vec<(glam::DVec3, Id)>>
@@ -42,12 +42,10 @@ where
 
 #[cfg(test)]
 mod test {
+    use common::geo::{Line, Sphere};
     use glam::DVec3;
 
-    use crate::{
-        geo::{Line, Sphere},
-        get_straight_trajectory,
-    };
+    use crate::get_straight_trajectory;
 
     #[test]
     fn simple5() {

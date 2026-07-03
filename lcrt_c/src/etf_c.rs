@@ -1,6 +1,6 @@
 use std::ptr;
 
-use etf::geo;
+use common::geo;
 use lcrt::NodeInfo;
 
 use crate::lcrt_c::{LcrtArea, LcrtPosition};

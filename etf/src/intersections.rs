@@ -1,5 +1,6 @@
 use std::{hash::Hash, marker::PhantomData, ops::Index};
 
+use common::geo::Sphere;
 use glam::DVec3;
 use petgraph::{
     adj::IndexType,
@@ -8,7 +9,7 @@ use petgraph::{
 };
 use rustc_hash::FxHashMap;
 
-use crate::{geo::Sphere, path::Path};
+use crate::path::Path;
 
 pub struct Intersections<'n, Id, G>
 where

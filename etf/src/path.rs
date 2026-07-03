@@ -5,13 +5,12 @@ use std::{
     slice::{self, Windows},
 };
 
+use common::geo::{Line, Sphere};
 use glam::DVec3;
 use petgraph::{
     csr,
     visit::{GraphBase, IntoNeighborsDirected},
 };
-
-use crate::geo::{Line, Sphere};
 
 pub struct Path<'n, Id, G>
 where

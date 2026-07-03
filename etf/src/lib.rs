@@ -1,16 +1,15 @@
 use std::ops::Index;
 
-use common::AncestorWalker;
+use common::{AncestorWalker, geo::Sphere};
 use glam::DVec3;
 use petgraph::visit::{GraphBase, IntoNeighborsDirected, Walker};
 
-pub mod geo;
 mod intersections;
 pub mod path;
 mod straight;
 pub use crate::{intersections::Intersections, straight::get_straight_trajectory};
 
-use crate::{geo::Sphere, path::Path};
+use crate::path::Path;
 
 #[must_use]
 pub fn get_ancestor_path<'n, G, Id>(

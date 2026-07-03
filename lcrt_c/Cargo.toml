@@ -16,6 +16,7 @@ name = "lcrt_c"
 crate-type = ["staticlib"]
 
 [dependencies]
+common.workspace = true
 lcrt.workspace = true
 etf.workspace = true
 glam.workspace = true
