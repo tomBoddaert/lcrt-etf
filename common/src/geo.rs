@@ -1,6 +1,8 @@
 use glam::DVec3;
 
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Sphere {
     pub o: DVec3,
     pub r: f64,
@@ -36,6 +38,13 @@ impl Sphere {
 
     #[must_use]
     #[inline]
+    pub fn mutual_contains_origin(&self, other: &Self) -> bool {
+        let d2 = self.o.distance_squared(other.o);
+        d2 < self.radius2() && d2 < other.radius2()
+    }
+
+    #[must_use]
+    #[inline]
     /// Returns whether each sphere contains the origin of the other if they intersect.
     ///
     /// If the two spheres do not intersect, this returns [`None`].
@@ -67,7 +76,7 @@ impl Sphere {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Line {
     pub a: DVec3,
     pub abl: f64,
