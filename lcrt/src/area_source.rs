@@ -1,9 +1,13 @@
 use std::{net::Ipv4Addr, num::Wrapping};
 
+use graph::Graph;
 use petgraph::stable_graph;
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use crate::{Config, Network, NodeInfo, Response, TimeoutId, availability, message};
+use crate::{
+    Config, Network, NodeInfo, Response, TimeoutId, availability, construction::SystemConstruction,
+    message,
+};
 
 /// Routing controller for an LCRT area source.
 pub struct AreaSource<N> {
@@ -132,17 +136,15 @@ impl<N: NodeInfo> AreaSource<N> {
     }
 }
 
-#[derive(Debug)]
-enum State {
-    Construction {
-        nodes: FxHashMap<Ipv4Addr, ConstructionNode>,
-        coverage: petgraph::stable_graph::StableGraph<Ipv4Addr, ()>,
-    },
+// TODO: enable debug once Graph has debug impl
+// #[derive(Debug)]
+enum State<Id = Ipv4Addr> {
+    Construction(SystemConstruction<Id>),
     Streaming {
         area_info_id: Wrapping<u8>,
-        nodes: FxHashMap<Ipv4Addr, message::NodeData>,
-        network: stable_graph::StableGraph<Ipv4Addr, ()>,
-        neighbours: Vec<Ipv4Addr>,
+        nodes: FxHashMap<Id, message::NodeData>,
+        network: Graph<Ipv4Addr, ()>,
+        neighbours: Vec<Id>,
         next_packet_id: Wrapping<u8>,
     },
 }
@@ -158,110 +160,16 @@ struct ConstructionNode {
 
 impl<N: NodeInfo> AreaSource<N> {
     pub fn handle_timeout(&mut self, id: TimeoutId) -> Response {
-        fn extract_level(
-            set: &mut FxHashSet<Ipv4Addr>,
-            nodes: &FxHashMap<Ipv4Addr, ConstructionNode>,
-            level: u16,
-        ) {
-            set.extend(
-                nodes
-                    .iter()
-                    .filter(|(_, n)| n.hop_distance == level)
-                    .map(|(a, _)| *a),
-            );
-        }
-
         assert_eq!(id, TimeoutId::Control, "expected a control timeout");
 
         match &mut self.state {
-            State::Construction { nodes, coverage } => {
-                // println!("LCRT DEBUG: CONSTRUCTING AREA WITH {} NODES", nodes.len());
-                // println!("LCRT CONSTRUCTING AREA: \nnodes: {nodes:#?}\ncoverage: {coverage:#?}");
-                let mut network = stable_graph::StableGraph::with_capacity(nodes.len(), 0);
-                let mut new_nodes: FxHashMap<Ipv4Addr, message::NodeData> = nodes
-                    .iter()
-                    .map(|(a, n)| {
-                        (
-                            *a,
-                            message::NodeData {
-                                position: n.position,
-                                index: network.add_node(*a),
-                            },
-                        )
-                    })
-                    .collect();
+            State::Construction(construction) => {
+                let construction = std::mem::replace(construction, SystemConstruction::new());
+                let network = construction.construct();
+                let (nodes, network) = network.take_nodes();
 
-                let levels = nodes
-                    .values()
-                    .map(|n| n.hop_distance)
-                    .max()
-                    .unwrap_or_default();
-
-                // TODO: use rayon?
-
-                let mut uncovered = FxHashSet::default();
-                let mut potential_forwarders = FxHashSet::default();
-                let mut neighbours = Vec::new();
-                for l in (0..levels).rev() {
-                    extract_level(&mut uncovered, nodes, l + 1);
-                    extract_level(&mut potential_forwarders, nodes, l);
-
-                    while !uncovered.is_empty() {
-                        // remove forwarders with no coverage
-                        potential_forwarders.retain(|a| {
-                            coverage.neighbors(nodes[a].coverage_index).next().is_some()
-                        });
-
-                        // find forwarder with highest eta
-                        let Some((fa, _)) = potential_forwarders
-                            .iter()
-                            .copied()
-                            .map(|a| {
-                                let children = coverage.neighbors(nodes[&a].coverage_index).count();
-                                let eta =
-                                    nodes[&a].eta(u16::try_from(children).unwrap_or(u16::MAX), 0); // TODO: update interfering nodes
-                                (a, eta)
-                            })
-                            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
-                        else {
-                            // TODO: abandon uncovered nodes?
-                            // If nodes are removed from the graph, switch to a StableGraph.
-                            // todo!("deal with failed construction");
-                            print!("WARNING: ABANDONING NODES ");
-                            for abandoned in uncovered.drain() {
-                                let root = new_nodes[&abandoned].index;
-                                delete_tree(&mut network, &mut new_nodes, root);
-                                // new_nodes
-                                //     .remove(&abandoned)
-                                //     .expect("expected abandoned node to be in the map of nodes");
-                            }
-                            println!();
-                            continue;
-                        };
-                        // remove the chosen forwarder from the potential forwarders
-                        potential_forwarders.remove(&fa);
-
-                        let forwarder_index = new_nodes[&fa].index;
-                        let forwarder_coverage_index = nodes[&fa].coverage_index;
-
-                        neighbours.extend(coverage.neighbors(forwarder_coverage_index));
-
-                        for child in neighbours.iter().copied().map(|ni| coverage[ni]) {
-                            uncovered.remove(&child);
-                            network.add_edge(forwarder_index, new_nodes[&child].index, ());
-                        }
-
-                        // neighbours.sort_unstable(); // nodes must be removed in reverse-index order
-                        for ni in neighbours.iter().copied().rev() {
-                            coverage.remove_node(ni);
-                        }
-                        neighbours.clear();
-                    }
-
-                    potential_forwarders.clear();
-                }
-
-                let me = new_nodes[&self.address];
+                // let me = new_nodes[&self.address];
+                let me = nodes[&self.address];
                 let neighbours: Vec<_> = network.neighbors(me.index).map(|i| network[i]).collect();
 
                 let id = Wrapping(0);

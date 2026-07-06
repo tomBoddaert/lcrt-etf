@@ -1,6 +1,6 @@
-use std::{net::Ipv4Addr, time};
+use std::{hash::Hash, net::Ipv4Addr, time};
 
-use crate::message::Message;
+use crate::{Identifier, message::Message};
 
 pub type Timeout = (TimeoutId, time::Duration);
 // /// The response from `handle_*` functions.
@@ -9,11 +9,27 @@ pub type Timeout = (TimeoutId, time::Duration);
 // /// If a duration is returned, the area's `handle_timeout` must be called after that time. This **must override** any timers previously set by the area controller.
 // pub type Response = (Option<message::Message>, Option<Timeout>);
 
-#[derive(Clone, Debug, Default)]
-pub struct Response {
-    pub message: Option<Message>,
+#[derive(Clone, Debug)]
+pub struct Response<Id = Ipv4Addr>
+where
+    Id: Identifier,
+{
+    pub message: Option<Message<Id>>,
     pub timeout: Option<Timeout>,
-    pub event: Option<Event>,
+    pub event: Option<Event<Id>>,
+}
+
+impl<Id> Default for Response<Id>
+where
+    Id: Identifier,
+{
+    fn default() -> Self {
+        Self {
+            message: None,
+            timeout: None,
+            event: None,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -44,8 +60,8 @@ impl TryFrom<u8> for TimeoutId {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Event {
-    Parent(Ipv4Addr),
+pub enum Event<Id = Ipv4Addr> {
+    Parent(Id),
 }
 
 macro_rules! ifty {
@@ -53,8 +69,8 @@ macro_rules! ifty {
     (# m o ) => { Option<M> };
     (# t ) => { Timeout };
     (# t o ) => { Option<Timeout> };
-    (# e ) => { Event };
-    (# e o ) => { Option<Event> };
+    (# e ) => { Event<Id> };
+    (# e o ) => { Option<Event<Id>> };
 
     ( $( $t:ident $($o:ident)? ),* ) => {
         ($(
@@ -96,9 +112,10 @@ macro_rules! ifs {
 macro_rules! impl_from {
     ( M ($( $t:ident $( $o:ident )? ),*) ) => {
         #[allow(clippy::allow_attributes, unused_parens)]
-        impl<M> From<ifty!($( $t $($o)? ),*)> for Response
+        impl<M, Id> From<ifty!($( $t $($o)? ),*)> for Response<Id>
         where
-            M: Into<Message>
+            M: Into<Message<Id>>,
+            Id: Identifier,
         {
             #[inline]
             fn from(($( $t ),*): ifty!($( $t $($o)? ),*)) -> Self {
@@ -113,7 +130,10 @@ macro_rules! impl_from {
 
     ( ($( $t:ident $( $o:ident )? ),*) ) => {
         #[allow(clippy::allow_attributes, unused_parens)]
-        impl From<ifty!($( $t $($o)? ),*)> for Response {
+        impl<Id> From<ifty!($( $t $($o)? ),*)> for Response<Id>
+        where
+            Id: Identifier,
+        {
             #[inline]
             fn from(($( $t ),*): ifty!($( $t $($o)? ),*)) -> Self {
                 Self {

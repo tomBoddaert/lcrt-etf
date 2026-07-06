@@ -44,7 +44,7 @@ enum Edge {
     Link,
 }
 
-struct SystemConstruction<Id = Ipv4Addr, TraceHook = trace::Disabled> {
+pub struct SystemConstruction<Id = Ipv4Addr, TraceHook = trace::Disabled> {
     connectivity: Graph<ConstructionNode<Id>, ()>,
     trace_hook: TraceHook,
 }
@@ -69,7 +69,7 @@ where
     Id: Copy,
 {
     #[inline]
-    const fn new() -> Self {
+    pub const fn new() -> Self {
         Self::new_with_tracing(trace::Disabled)
     }
 }
@@ -80,14 +80,14 @@ where
     for<'t> TraceHook: trace::Hook<Trace<'t, Id>>,
 {
     #[inline]
-    const fn new_with_tracing(trace_hook: TraceHook) -> Self {
+    pub const fn new_with_tracing(trace_hook: TraceHook) -> Self {
         Self {
             connectivity: Graph::new(),
             trace_hook,
         }
     }
 
-    fn add(&mut self, node: ConstructionNode<Id>) {
+    pub fn add(&mut self, node: ConstructionNode<Id>) {
         let i = self.connectivity.add_node(node);
 
         let parent_hop_distance = node.hop_distance.checked_sub(1);
@@ -120,7 +120,7 @@ where
         }
     }
 
-    fn construct(self) -> Graph<Node<Id>, Edge> {
+    pub fn construct(self) -> Graph<Node<Id>, Edge> {
         let Self {
             connectivity,
             mut trace_hook,

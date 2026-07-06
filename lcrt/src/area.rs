@@ -187,7 +187,7 @@ struct ParentOption {
 // }
 
 impl<N: NodeInfo> Area<N> {
-    /// Handle an incomming control [`Message`](message::Message).
+    /// Handle an incoming control [`Message`](message::Message).
     ///
     #[doc = doc_handle_return!()]
     pub fn handle_message(&mut self, m: message::Message) -> Response {
@@ -290,7 +290,7 @@ impl<N: NodeInfo> Area<N> {
         (m, t).into()
     }
 
-    /// Handle an incomming [`AreaConstruction`](message::AreaConstruction) message.
+    /// Handle an incoming [`AreaConstruction`](message::AreaConstruction) message.
     ///
     #[doc = doc_handle_return!()]
     pub fn handle_area_construction(&mut self, m: message::AreaConstruction) -> Response {
@@ -355,7 +355,7 @@ impl<N: NodeInfo> Area<N> {
         }
     }
 
-    /// Handle an incomming [`JoinReport`](message::JoinReport) message.
+    /// Handle an incoming [`JoinReport`](message::JoinReport) message.
     ///
     #[doc = doc_handle_return!()]
     pub fn handle_join_report(&mut self, mut m: message::JoinReport) -> Response {
@@ -394,7 +394,7 @@ impl<N: NodeInfo> Area<N> {
         }
     }
 
-    /// Handle an incomming [`AreaInfo`](message::AreaInfo) message.
+    /// Handle an incoming [`AreaInfo`](message::AreaInfo) message.
     ///
     #[doc = doc_handle_return!()]
     pub fn handle_area_info(&mut self, m: message::AreaInfo) -> Response {

@@ -2,7 +2,7 @@
 //!
 //! Based on the paper "[Resource-Aware Video Multicasting via Access Gateways in Wireless Mesh Networks](https://www.doi.org/10.1109/ICNP.2008.4697023)" by W. Tu, C. J. Sreenan, C. T. Chou, A. Misra and S. Jha, published in 2008 IEEE International Conference on Network Protocols, pp. 43-52. doi: [10.1109/ICNP.2008.4697023](https://www.doi.org/10.1109/ICNP.2008.4697023).
 
-use std::net::Ipv4Addr;
+use std::{hash::Hash, net::Ipv4Addr};
 
 use petgraph::stable_graph;
 
@@ -19,6 +19,7 @@ macro_rules! doc_handle_return {
 mod area;
 mod area_any;
 mod area_source;
+pub mod behaviour;
 mod config;
 mod construction;
 pub mod message;
@@ -35,6 +36,12 @@ pub use response::{Event, Response, Timeout, TimeoutId};
 
 /// A graph representing an LCRT area network.
 pub type Network = stable_graph::StableGraph<Ipv4Addr, ()>; // TODO: switch to regular graph / CSR
+
+/// Alias for [`Copy`]` + `[`Eq`]` + `[`Hash`].
+///
+/// Usually defaults to [`Ipv4Addr`].
+pub trait Identifier: Copy + Eq + Hash {}
+impl<Id> Identifier for Id where Id: Copy + Eq + Hash {}
 
 fn availability(capacity: f32, rate: f32) -> f32 {
     capacity / rate

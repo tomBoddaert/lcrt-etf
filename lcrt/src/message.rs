@@ -1,33 +1,38 @@
 //! LCRT area control message definitions.
 
 use std::{
+    hash::Hash,
     net::Ipv4Addr,
     num::{NonZero, Wrapping},
 };
 
+use common::geo::Sphere;
 use petgraph::stable_graph;
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 
+use crate::Identifier;
+
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 /// The message that advertises the construction of a new LCRT area.
 pub struct AreaConstruction {
+    pub k: NonZero<u16>,
     /// Time To Live (TTL). Must be decremented each time the message is forwarded.
     pub ttl: NonZero<u16>,
-    /// Position of the forwarding node.
-    pub position: glam::DVec3,
+    /// Position and radius of the forwarding node.
+    pub position: Sphere,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 /// The message requesting to join an LCRT area.
-pub struct JoinReport {
+pub struct JoinReport<Id = Ipv4Addr> {
     /// Address of the joining node.
-    pub address: Ipv4Addr,
+    pub address: Id,
     /// Hop distance from the source to the joining node.
     pub hop_distance: u16,
     /// Position of the joining node.
     pub position: glam::DVec3,
-    /// Avaliability of the joining node.
+    /// Availability of the joining node.
     pub availability: f32,
     /// Number of transmitting neighbours in interference range of the joining node.
     pub interfering_neighbours: u16,
@@ -37,13 +42,16 @@ pub struct JoinReport {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 /// The message signalling the creation of an LCRT area.
-pub struct AreaInfo {
+pub struct AreaInfo<Id = Ipv4Addr>
+where
+    Id: Eq + Hash,
+{
     /// Id for this area info.
     pub id: Wrapping<u8>,
     /// Network routing graph.
-    pub network: stable_graph::StableGraph<Ipv4Addr, ()>, // TODO: switch back to regular graph / CSR
+    pub network: stable_graph::StableGraph<Id, ()>, // TODO: switch back to regular graph / CSR
     /// [`NodeData`] map.
-    pub nodes: FxHashMap<Ipv4Addr, NodeData>,
+    pub nodes: FxHashMap<Id, NodeData>,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
@@ -56,41 +64,47 @@ pub struct NodeData {
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-pub struct JoinArea {
-    pub address: Ipv4Addr,
+pub struct JoinArea<Id = Ipv4Addr> {
+    pub address: Id,
     pub position: glam::DVec3,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-pub struct JoinAvailable {
-    pub address: Ipv4Addr,
-    pub parent: Ipv4Addr,
+pub struct JoinAvailable<Id = Ipv4Addr> {
+    pub address: Id,
+    pub parent: Id,
     pub hop_distance: u16,
     pub confidence: f32,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-pub struct JoinAccept {
-    pub address: Ipv4Addr,
+pub struct JoinAccept<Id = Ipv4Addr> {
+    pub address: Id,
     pub position: glam::DVec3,
-    pub parent: Ipv4Addr,
-    pub forwarder: Ipv4Addr,
+    pub parent: Id,
+    pub forwarder: Id,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 /// An LCRT area control message.
-pub enum Message {
+pub enum Message<Id = Ipv4Addr>
+where
+    Id: Eq + Hash,
+{
     AreaConstruction(AreaConstruction),
-    JoinReport(JoinReport),
-    AreaInfo(AreaInfo),
-    JoinArea(JoinArea),
-    JoinAvailable(JoinAvailable),
-    JoinAccept(JoinAccept),
+    JoinReport(JoinReport<Id>),
+    AreaInfo(AreaInfo<Id>),
+    JoinArea(JoinArea<Id>),
+    JoinAvailable(JoinAvailable<Id>),
+    JoinAccept(JoinAccept<Id>),
 }
 
 macro_rules! into_message_impl {
-    ( $t:ty => $v:path ) => {
-        impl From<$t> for Message {
+    ( < $id:ident > $t:ty => $v:path ) => {
+        impl<$id> From<$t> for Message<$id>
+        where
+            $id: Identifier,
+        {
             #[inline]
             fn from(value: $t) -> Self {
                 $v(value)
@@ -98,16 +112,16 @@ macro_rules! into_message_impl {
         }
     };
 
-    { $( $t:ty => $v:path  ),* $(,)? } => {
-        $( into_message_impl!($t => $v); )*
+    { < $id:ident > $( $t:ty => $v:path  ),* $(,)? } => {
+        $( into_message_impl!(<$id> $t => $v); )*
     };
 }
 
-into_message_impl! {
+into_message_impl! { <Id>
     AreaConstruction => Message::AreaConstruction,
-    JoinReport => Message::JoinReport,
-    AreaInfo => Message::AreaInfo,
-    JoinArea => Message::JoinArea,
-    JoinAvailable => Message::JoinAvailable,
-    JoinAccept => Message::JoinAccept,
+    JoinReport<Id> => Message::JoinReport,
+    AreaInfo<Id> => Message::AreaInfo,
+    JoinArea<Id> => Message::JoinArea,
+    JoinAvailable<Id> => Message::JoinAvailable,
+    JoinAccept<Id> => Message::JoinAccept,
 }
