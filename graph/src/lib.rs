@@ -1,3 +1,4 @@
+#[derive(Clone)]
 pub struct Graph<N, E> {
     nodes: Vec<N>,
     adjacency: VecMatrix<E>,
@@ -81,6 +82,11 @@ impl<N, E> Graph<N, E> {
             .filter_map(|(i, e)| e.as_ref().map(|_| i))
     }
 
+    pub fn reverse_neighbours(&self, index: usize) -> impl Iterator<Item = usize> {
+        self.adjacency
+            .incoming_column_indicies(self.node_count(), index)
+    }
+
     pub fn disconnect_incoming(&mut self, index: usize) {
         self.adjacency
             .incoming_column_indicies(self.node_count(), index)
@@ -102,6 +108,7 @@ impl<N, E> Graph<N, E> {
     }
 }
 
+#[derive(Clone)]
 struct VecMatrix<T> {
     n: usize,
     data: Vec<Option<T>>,

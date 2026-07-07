@@ -2,7 +2,7 @@ use std::num::NonZero;
 
 use common::geo::Sphere;
 
-use crate::message;
+use crate::{Identifier, availability, message};
 
 pub struct Construction {
     min_hop_distance: u16,
@@ -10,6 +10,7 @@ pub struct Construction {
 }
 
 impl Construction {
+    #[must_use]
     pub fn new(
         m: message::AreaConstruction,
         position: Sphere,
@@ -36,6 +37,13 @@ impl Construction {
         ))
     }
 
+    #[must_use]
+    #[inline]
+    pub const fn get_hop_distance(&self) -> u16 {
+        self.min_hop_distance
+    }
+
+    #[must_use]
     pub fn handle_area_construction(
         &mut self,
         m: message::AreaConstruction,
@@ -65,5 +73,27 @@ impl Construction {
             ttl,
             position: self.position,
         })
+    }
+
+    #[must_use]
+    #[inline]
+    pub fn handle_control_timeout<Id>(
+        &self,
+        address: Id,
+        bitrate_capacity: f32,
+        current_bitrate: f32,
+        interfering_neighbours: u16,
+    ) -> message::JoinReport<Id>
+    where
+        Id: Identifier,
+    {
+        message::JoinReport {
+            address,
+            hop_distance: self.min_hop_distance,
+            position: self.position,
+            availability: availability(bitrate_capacity, current_bitrate),
+            interfering_neighbours,
+            forwarder_hop_distance: self.min_hop_distance,
+        }
     }
 }

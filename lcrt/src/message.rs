@@ -11,7 +11,7 @@ use petgraph::stable_graph;
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 
-use crate::Identifier;
+use crate::{Identifier, Network};
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 /// The message that advertises the construction of a new LCRT area.
@@ -30,8 +30,8 @@ pub struct JoinReport<Id = Ipv4Addr> {
     pub address: Id,
     /// Hop distance from the source to the joining node.
     pub hop_distance: u16,
-    /// Position of the joining node.
-    pub position: glam::DVec3,
+    /// Position and radius of the joining node.
+    pub position: Sphere,
     /// Availability of the joining node.
     pub availability: f32,
     /// Number of transmitting neighbours in interference range of the joining node.
@@ -40,7 +40,9 @@ pub struct JoinReport<Id = Ipv4Addr> {
     pub forwarder_hop_distance: u16,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+// TODO: add serialization and debugging
+// #[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone)]
 /// The message signalling the creation of an LCRT area.
 pub struct AreaInfo<Id = Ipv4Addr>
 where
@@ -49,18 +51,16 @@ where
     /// Id for this area info.
     pub id: Wrapping<u8>,
     /// Network routing graph.
-    pub network: stable_graph::StableGraph<Id, ()>, // TODO: switch back to regular graph / CSR
-    /// [`NodeData`] map.
-    pub nodes: FxHashMap<Id, NodeData>,
+    pub network: Network<Id>,
+    pub next_packet_id: Wrapping<u8>,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 /// Information about a node in an LCRT area network.
-pub struct NodeData {
+pub struct NodeData<Id = Ipv4Addr> {
+    pub address: Id,
     /// The node's position.
     pub position: glam::DVec3,
-    /// The node's graph index in the network routing graph (from [`AreaInfo::network`]).
-    pub index: stable_graph::NodeIndex,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
@@ -85,7 +85,8 @@ pub struct JoinAccept<Id = Ipv4Addr> {
     pub forwarder: Id,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+// #[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone)]
 /// An LCRT area control message.
 pub enum Message<Id = Ipv4Addr>
 where

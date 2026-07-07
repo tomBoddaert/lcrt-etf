@@ -1,15 +1,13 @@
-use std::{
-    mem,
-    net::Ipv4Addr,
-    num::{NonZero, Wrapping},
-};
+use std::{mem, net::Ipv4Addr, num::Wrapping};
 
-use common::AncestorWalker;
-use petgraph::visit::Walker;
-use rustc_hash::{FxHashMap, FxHashSet};
+use common::geo::Sphere;
+use graph::Graph;
+use rustc_hash::FxHashSet;
 
 use crate::{
-    Config, Event, Network, NodeInfo, Response, Timeout, TimeoutId, availability, message,
+    Config, Event, Network, NodeInfo, Response, Timeout, TimeoutId,
+    behaviour::{Construction, ForwardJoinRequests, Streaming},
+    message,
 };
 
 /// Routing controller for an LCRT area non-source member (forwarder / receiver).
@@ -68,42 +66,42 @@ impl<N: NodeInfo> Area<N> {
 
     #[inline]
     /// If the network is established, returns the network topology graph and [`NodeData`](message::NodeData) map.
-    pub const fn get_network(&self) -> Option<(&FxHashMap<Ipv4Addr, message::NodeData>, &Network)> {
-        let State::Streaming { nodes, network, .. } = &self.state else {
+    pub const fn get_network(&self) -> Option<&Network> {
+        let State::Streaming { network, .. } = &self.state else {
             return None;
         };
 
-        Some((nodes, network))
+        Some(network)
     }
 
     #[inline]
     /// If the network is established, returns the node's parent.
     pub const fn get_parent(&self) -> Option<Ipv4Addr> {
-        let State::Streaming { parent, .. } = &self.state else {
+        let State::Streaming { streaming, .. } = &self.state else {
             return None;
         };
 
-        Some(*parent)
+        Some(streaming.get_parent())
     }
 
     #[inline]
     /// If the network is established, returnss the node's children.
     pub const fn get_children(&self) -> Option<&[Ipv4Addr]> {
-        let State::Streaming { neighbours, .. } = &self.state else {
+        let State::Streaming { streaming, .. } = &self.state else {
             return None;
         };
 
-        Some(neighbours.as_slice())
+        Some(streaming.get_children())
     }
 
     #[inline]
     /// Returns whether the network is established and the node has children (and is therefore a forwarder).
     pub const fn has_children(&self) -> bool {
-        // Option::map_or is not const, so use match
-        match self.get_children() {
-            Some(children) => !children.is_empty(),
-            None => false,
-        }
+        let State::Streaming { streaming, .. } = &self.state else {
+            return false;
+        };
+
+        streaming.has_children()
     }
 
     #[inline]
@@ -117,27 +115,11 @@ impl<N: NodeInfo> Area<N> {
     }
 
     pub fn notify_received_packet(&mut self, id: u8) -> Option<Timeout> {
-        let State::Streaming {
-            next_packet_id,
-            packets_lost,
-            packets_sent,
-            ..
-        } = &mut self.state
-        else {
+        let State::Streaming { streaming, .. } = &mut self.state else {
             return None;
         };
 
-        let diff = Wrapping(id) - *next_packet_id;
-        // TODO: handle past packets (wrong order) better (diff.0 will be < 128)
-        debug_assert!(diff.0 < 128, "diff was {diff} (should be < 128)");
-        let sent = u32::from(diff.0) + 1;
-        *packets_sent = packets_sent.checked_add(sent).unwrap_or_else(|| {
-            *packets_lost = 0;
-            sent
-        });
-        *packets_lost += u32::from(diff.0);
-
-        *next_packet_id += 1;
+        streaming.notify_received_packet(id);
 
         Some((
             TimeoutId::Packet,
@@ -149,21 +131,15 @@ impl<N: NodeInfo> Area<N> {
 enum State {
     Startup,
     Construction {
-        min_hop_distance: u16,
-        position: glam::DVec3,
-        joins_forwarded: FxHashSet<Ipv4Addr>,
+        construction: Construction,
+        forward_joins: ForwardJoinRequests,
     },
-    AwaitingAreaInfo(Option<ForwardingJoinRequests>),
+    AwaitingAreaInfo(Option<(ForwardJoinRequests, u16)>),
     Streaming {
         hop_distance: u16,
         area_info_id: Wrapping<u8>,
-        nodes: FxHashMap<Ipv4Addr, message::NodeData>,
         network: Network,
-        neighbours: Vec<Ipv4Addr>,
-        parent: Ipv4Addr,
-        next_packet_id: Wrapping<u8>,
-        packets_lost: u32,
-        packets_sent: u32,
+        streaming: Streaming,
     },
     AwaitingJoinAvailable {
         best: Option<ParentOption>,
@@ -180,11 +156,6 @@ struct ParentOption {
     hop_distance: u16,
     confidence: f32,
 }
-
-// struct JoinGroupRequest {
-//     child: Ipv4Addr,
-//     min_hop_distance: u16,
-// }
 
 impl<N: NodeInfo> Area<N> {
     /// Handle an incoming control [`Message`](message::Message).
@@ -231,26 +202,18 @@ impl<N: NodeInfo> Area<N> {
     fn handle_control_timeout(&mut self) -> Response {
         match &mut self.state {
             State::Construction {
-                min_hop_distance,
-                position,
-                joins_forwarded,
+                construction,
+                forward_joins,
             } => {
-                let m = message::JoinReport {
-                    address: self.address,
-                    hop_distance: *min_hop_distance,
-                    position: *position,
-                    availability: availability(
-                        self.config.bitrate_capacity,
-                        self.node_info.current_bitrate(),
-                    ),
-                    interfering_neighbours: self.node_info.interfering_neighbours(),
-                    forwarder_hop_distance: *min_hop_distance,
-                };
+                let m = construction.handle_control_timeout(
+                    self.address,
+                    self.config.bitrate_capacity,
+                    self.node_info.current_bitrate(),
+                    self.node_info.interfering_neighbours(),
+                );
 
-                self.state = State::AwaitingAreaInfo(Some(ForwardingJoinRequests {
-                    hop_distance: *min_hop_distance,
-                    joins_forwarded: mem::take(joins_forwarded),
-                }));
+                self.state =
+                    State::AwaitingAreaInfo(Some((mem::take(forward_joins), m.hop_distance)));
 
                 println!("{m:#?}");
 
@@ -296,55 +259,24 @@ impl<N: NodeInfo> Area<N> {
     pub fn handle_area_construction(&mut self, m: message::AreaConstruction) -> Response {
         match &mut self.state {
             State::Startup => {
-                let position = self.node_info.position();
-
-                // if either node is outside of the other's RTR, ignore it
-                if position.distance_squared(m.position) > self.config.radius * self.config.radius {
-                    return Default::default();
-                }
-
-                let ttl = m.ttl.get() - 1;
-                debug_assert!(self.config.k.get() > ttl);
-
-                self.state = State::Construction {
-                    min_hop_distance: self.config.k.get() - ttl,
-                    position,
-                    joins_forwarded: FxHashSet::default(),
+                let position = Sphere::new(self.node_info.position(), self.config.radius);
+                let Some((construction, m)) = Construction::new(m, position) else {
+                    return Response::default();
                 };
 
-                let m = NonZero::new(ttl).map(|ttl| message::AreaConstruction { ttl, position });
+                self.state = State::Construction {
+                    construction,
+                    forward_joins: ForwardJoinRequests::new(),
+                };
+
                 (m, (TimeoutId::Control, self.config.construct_timeout)).into()
             }
 
-            State::Construction {
-                min_hop_distance,
-                position,
-                ..
-            } => {
-                // if either node is outside of the other's RTR, ignore it
-                if position.distance_squared(m.position) > self.config.radius * self.config.radius {
-                    return Default::default();
-                }
-
-                let ttl = m.ttl.get() - 1;
-                debug_assert!(self.config.k.get() > ttl);
-                let hop_distance = self.config.k.get() - ttl;
-
-                // if the hop distance is no better, ignore it
-                if hop_distance >= *min_hop_distance {
-                    return Default::default();
-                }
-
-                // TODO: handle error
-                // assuming k has stayed constant, hd < mhd, so ttl > maxttl >= 0
-                // if this fails, then k must have changed
-                let ttl = NonZero::new(ttl).expect("expected improved ttl to be nonzero");
-                *min_hop_distance = hop_distance;
-
-                let m = message::AreaConstruction {
-                    ttl,
-                    position: *position,
+            State::Construction { construction, .. } => {
+                let Some(m) = construction.handle_area_construction(m) else {
+                    return Response::default();
                 };
+
                 (m, (TimeoutId::Control, self.config.construct_timeout)).into()
             }
 
@@ -358,7 +290,7 @@ impl<N: NodeInfo> Area<N> {
     /// Handle an incoming [`JoinReport`](message::JoinReport) message.
     ///
     #[doc = doc_handle_return!()]
-    pub fn handle_join_report(&mut self, mut m: message::JoinReport) -> Response {
+    pub fn handle_join_report(&mut self, m: message::JoinReport) -> Response {
         match &mut self.state {
             State::Startup | State::AwaitingJoinAvailable { .. } => {
                 // TODO cache join requests to be sent later
@@ -366,25 +298,14 @@ impl<N: NodeInfo> Area<N> {
             }
 
             State::Construction {
-                min_hop_distance: hop_distance,
-                joins_forwarded,
-                ..
-            }
-            | State::AwaitingAreaInfo(Some(ForwardingJoinRequests {
-                hop_distance,
-                joins_forwarded,
-                ..
-            })) => {
-                if *hop_distance >= m.forwarder_hop_distance || joins_forwarded.contains(&m.address)
-                {
-                    return Default::default();
-                }
+                construction,
+                forward_joins,
+            } => forward_joins
+                .handle_join_report(m, construction.get_hop_distance())
+                .into(),
 
-                m.forwarder_hop_distance = *hop_distance;
-
-                joins_forwarded.insert(m.address);
-
-                m.into()
+            State::AwaitingAreaInfo(Some((forward_joins, hop_distance))) => {
+                forward_joins.handle_join_report(m, *hop_distance).into()
             }
 
             State::Streaming { .. } | State::AwaitingAreaInfo(None) => {
@@ -398,105 +319,77 @@ impl<N: NodeInfo> Area<N> {
     ///
     #[doc = doc_handle_return!()]
     pub fn handle_area_info(&mut self, m: message::AreaInfo) -> Response {
-        let message::AreaInfo { id, network, nodes } = m;
-        let me = nodes.get(&self.address);
-
-        let (mut neighbours, hop_distance) = match &mut self.state {
+        let Some((streaming, hop_distance)) = (match &mut self.state {
             State::Startup | State::Construction { .. } | State::AwaitingJoinAvailable { .. } => {
                 println!(
-                    "WARNING: NODE {} NOT IN AREA {} ({id})",
-                    self.address, self.group
+                    "WARNING: NODE {} NOT IN AREA {} ({}, never sent JOIN_REPORT)",
+                    self.address, self.group, m.id
                 );
-                return Default::default();
+                return Response::default();
             }
 
-            State::AwaitingAreaInfo(Some(ForwardingJoinRequests { hop_distance, .. })) => {
-                (Vec::new(), *hop_distance)
+            State::AwaitingAreaInfo(Some((_, hop_distance))) => {
+                Streaming::new(&m, self.address).map(|s| (s, Some(*hop_distance)))
             }
-            State::AwaitingAreaInfo(None) => {
-                if let Some(me) = me {
-                    let hop_distance = AncestorWalker::new(me.index).iter(&network).count();
-                    (
-                        Vec::new(),
-                        u16::try_from(hop_distance).expect(
-                            "expected the network to have a maximum hop distance of 65,535",
-                        ),
-                    )
-                } else {
-                    println!(
-                        "WARNING: NODE {} NOT IN AREA {} ({id})",
-                        self.address, self.group
-                    );
-                    return Default::default();
-                }
-            }
+            State::AwaitingAreaInfo(None) => Streaming::new(&m, self.address).map(|s| (s, None)),
 
-            State::Streaming {
-                hop_distance,
-                area_info_id,
-                neighbours,
-                ..
-            } => {
+            State::Streaming { area_info_id, .. } => 'update_streaming: {
                 let diff = (m.id - *area_info_id).0;
                 // if this is the current or an old version, ignore it
                 // TODO: add constant to the config?
                 if diff == 0 || diff > u8::MAX - 16 {
-                    return Default::default();
+                    return Response::default();
                 }
 
                 if diff > 64 {
                     // TODO: WARNING, very high packet loss, can't reliably tell if this is new or old
                     todo!(
-                        "potentially disconnect? (diff: {diff}, current: {area_info_id}, m: {:?})",
-                        message::AreaInfo { id, network, nodes }
+                        "potentially disconnect? (diff: {diff}, current: {area_info_id})", //, m: {m:?})",
                     );
+                    // break 'update_streaming None; // ?
                 }
 
                 // TODO: add to packet loss counter?
 
-                let mut neighbours = mem::take(neighbours);
-                neighbours.clear();
-                (neighbours, *hop_distance)
+                let State::Streaming {
+                    hop_distance,
+                    streaming,
+                    ..
+                } = mem::replace(&mut self.state, State::AwaitingAreaInfo(None))
+                else {
+                    unreachable!();
+                };
+                let Some(streaming) = streaming.update(&m, self.address) else {
+                    break 'update_streaming None;
+                };
+
+                Some((streaming, Some(hop_distance)))
             }
-        };
-
-        let Some(me) = me else {
+        }) else {
+            self.state = State::AwaitingAreaInfo(None);
             println!(
-                "WARNING: NODE {} NOT IN AREA {} ({id})",
-                self.address, self.group
+                "WARNING: NODE {} NOT IN AREA {} ({})",
+                self.address, self.group, m.id
             );
-            return Default::default();
+            return Response::default();
         };
-        neighbours.extend(network.neighbors(me.index).map(|i| network[i]));
-        let mut parents = network.neighbors_directed(me.index, petgraph::Incoming);
-        let parent = parents
-            .next()
-            .map(|i| network[i])
-            .expect("expected to have a parent in the network");
-        debug_assert!(
-            parents.next().is_none(),
-            "expected to have no more than one parent in the network"
-        );
 
-        let m = (!neighbours.is_empty()).then_some(message::AreaInfo {
-            id,
-            network: network.clone(),
-            nodes: nodes.clone(),
+        let hop_distance = hop_distance.unwrap_or_else(|| {
+            calculate_depth(&m.network, |n| &n.address, &self.address)
+                .expect("expected to be in network (this should have already been checked)")
         });
+
+        let m_forward = (streaming.has_children()).then(|| m.clone());
+        let e = Event::Parent(streaming.get_parent());
 
         self.state = State::Streaming {
             hop_distance,
-            area_info_id: id,
-            nodes,
-            network,
-            neighbours,
-            parent,
-            next_packet_id: Wrapping(0),
-            packets_lost: 0,
-            packets_sent: 0,
+            area_info_id: m.id,
+            network: m.network,
+            streaming,
         };
 
-        (m, Event::Parent(parent)).into()
+        (m_forward, e).into()
     }
 
     pub fn handle_join_area(&mut self, m: message::JoinArea) -> Response {
@@ -508,8 +401,7 @@ impl<N: NodeInfo> Area<N> {
 
             State::Streaming {
                 hop_distance,
-                packets_lost,
-                packets_sent,
+                streaming,
                 ..
             } => {
                 debug_assert!(*hop_distance <= self.config.k.get());
@@ -529,7 +421,7 @@ impl<N: NodeInfo> Area<N> {
                     parent: self.address,
                     hop_distance: *hop_distance + 1,
                     #[expect(clippy::cast_possible_truncation)]
-                    confidence: (1. - f64::from(*packets_lost) / f64::from(*packets_sent)) as f32,
+                    confidence: streaming.get_confidence() as f32,
                 }
                 .into()
             }
@@ -581,7 +473,7 @@ impl<N: NodeInfo> Area<N> {
             | State::AwaitingAreaInfo { .. }
             | State::AwaitingJoinAvailable { .. } => Default::default(),
 
-            State::Streaming { neighbours, .. } => {
+            State::Streaming { streaming, .. } => {
                 // if we are not the parent and we are not the next forwarder, ignore it
                 if m.forwarder == m.address {
                     if m.parent != self.address {
@@ -589,7 +481,7 @@ impl<N: NodeInfo> Area<N> {
                     }
                     // TODO: temporarily add the node to the neighbours to start forwarding immediately
                     // need to also accept messages on the other end
-                } else if !neighbours.contains(&m.forwarder) {
+                } else if !streaming.get_children().contains(&m.forwarder) {
                     return Response::default();
                 }
 
@@ -606,6 +498,50 @@ impl<N: NodeInfo> Area<N> {
                 }
                 .into()
             }
+        }
+    }
+}
+
+fn calculate_depth<N, F, I>(tree: &Graph<N, ()>, mut key: F, node: &I) -> Option<u16>
+where
+    F: FnMut(&N) -> &I,
+    I: ?Sized + Eq,
+{
+    #[inline]
+    fn get_parent<N>(tree: &Graph<N, ()>, i: usize) -> Option<usize> {
+        let mut parents = tree.reverse_neighbours(i);
+        let parent = parents.next();
+        debug_assert!(
+            parents.next().is_none(),
+            "expected node in tree to have at most one parent"
+        );
+        parent
+    }
+
+    let mut i = tree.nodes().iter().position(|n| key(n) == node)?;
+    let mut depth = 0;
+    while let Some(p) = get_parent(tree, i) {
+        depth += 1;
+        i = p;
+    }
+
+    Some(depth)
+}
+
+#[cfg(test)]
+mod test {
+    use crate::{
+        area::calculate_depth,
+        test::tree_example::{NODES, node_info_tree},
+    };
+
+    #[test]
+    fn depth_calculation() {
+        let tree = node_info_tree();
+
+        for node in NODES {
+            let depth = calculate_depth(&tree, |n| n.id, node.id);
+            assert_eq!(depth, Some(node.hop_distance));
         }
     }
 }

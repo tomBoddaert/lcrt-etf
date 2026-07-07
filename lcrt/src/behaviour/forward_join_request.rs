@@ -12,6 +12,7 @@ impl<Id> ForwardJoinRequests<Id>
 where
     Id: Identifier,
 {
+    #[must_use]
     #[inline]
     pub fn new() -> Self {
         Self {
@@ -32,5 +33,15 @@ where
         self.forwarded.insert(m.address);
 
         Some(m)
+    }
+}
+
+impl<Id> Default for ForwardJoinRequests<Id>
+where
+    Id: Identifier,
+{
+    #[inline]
+    fn default() -> Self {
+        Self::new()
     }
 }

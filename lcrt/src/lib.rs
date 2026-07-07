@@ -4,6 +4,7 @@
 
 use std::{hash::Hash, net::Ipv4Addr};
 
+use graph::Graph;
 use petgraph::stable_graph;
 
 macro_rules! doc_handle_return {
@@ -35,7 +36,7 @@ pub use node_info::NodeInfo;
 pub use response::{Event, Response, Timeout, TimeoutId};
 
 /// A graph representing an LCRT area network.
-pub type Network = stable_graph::StableGraph<Ipv4Addr, ()>; // TODO: switch to regular graph / CSR
+pub type Network<Id = Ipv4Addr> = Graph<message::NodeData<Id>, ()>;
 
 /// Alias for [`Copy`]` + `[`Eq`]` + `[`Hash`].
 ///
@@ -44,6 +45,8 @@ pub trait Identifier: Copy + Eq + Hash {}
 impl<Id> Identifier for Id where Id: Copy + Eq + Hash {}
 
 fn availability(capacity: f32, rate: f32) -> f32 {
+    debug_assert!(capacity > 0.);
+    debug_assert!(rate >= 0.);
     capacity / rate
 }
 
@@ -56,6 +59,7 @@ fn eta(availability: f32, children: u16, interfering_nodes: f32) -> f32 {
 mod test {
     pub mod tree_example {
         use common::geo::Sphere;
+        use graph::Graph;
 
         #[derive(Clone, Copy, Debug, PartialEq)]
         pub struct NodeInfo {
@@ -138,6 +142,21 @@ mod test {
                 children: &[],
             },
         ];
+
+        pub fn node_info_tree() -> Graph<&'static NodeInfo, ()> {
+            let nodes = NODES.iter().collect();
+            let mut graph = Graph::with_nodes(nodes);
+
+            for (pi, p) in NODES.iter().enumerate() {
+                for (ci, c) in NODES.iter().enumerate() {
+                    if p.children.contains(&c.id) {
+                        graph.add_edge(pi, ci, ());
+                    }
+                }
+            }
+
+            graph
+        }
 
         pub const MAX_HOP_DISTANCE: u16 = {
             let mut max = 0;
