@@ -126,6 +126,12 @@ impl<N: NodeInfo> Area<N> {
             self.config.message_period * (u32::from(self.config.gamma.get()) + 1),
         ))
     }
+
+    #[must_use]
+    #[inline]
+    fn position(&self) -> Sphere {
+        Sphere::new(self.node_info.position(), self.config.radius)
+    }
 }
 
 enum State {
@@ -192,7 +198,7 @@ impl<N: NodeInfo> Area<N> {
 
         let m = message::JoinAccept {
             address: self.address,
-            position: self.node_info.position(),
+            position: self.position(),
             parent,
             forwarder: self.address,
         };
@@ -227,10 +233,11 @@ impl<N: NodeInfo> Area<N> {
                     return Default::default();
                 };
 
+                let parent = best.address;
                 let m = message::JoinAccept {
                     address: self.address,
-                    position: self.node_info.position(),
-                    parent: best.address,
+                    position: self.position(),
+                    parent,
                     forwarder: self.address,
                 };
 
@@ -259,7 +266,7 @@ impl<N: NodeInfo> Area<N> {
     pub fn handle_area_construction(&mut self, m: message::AreaConstruction) -> Response {
         match &mut self.state {
             State::Startup => {
-                let position = Sphere::new(self.node_info.position(), self.config.radius);
+                let position = self.position();
                 let Some((construction, m)) = Construction::new(m, position) else {
                     return Response::default();
                 };
@@ -502,13 +509,13 @@ impl<N: NodeInfo> Area<N> {
     }
 }
 
-fn calculate_depth<N, F, I>(tree: &Graph<N, ()>, mut key: F, node: &I) -> Option<u16>
+fn calculate_depth<N, E, F, I>(tree: &Graph<N, E>, mut key: F, node: &I) -> Option<u16>
 where
     F: FnMut(&N) -> &I,
     I: ?Sized + Eq,
 {
     #[inline]
-    fn get_parent<N>(tree: &Graph<N, ()>, i: usize) -> Option<usize> {
+    fn get_parent<N, E>(tree: &Graph<N, E>, i: usize) -> Option<usize> {
         let mut parents = tree.reverse_neighbours(i);
         let parent = parents.next();
         debug_assert!(

@@ -9,7 +9,9 @@ pub type Timeout = (TimeoutId, time::Duration);
 // /// If a duration is returned, the area's `handle_timeout` must be called after that time. This **must override** any timers previously set by the area controller.
 // pub type Response = (Option<message::Message>, Option<Timeout>);
 
-#[derive(Clone, Debug)]
+// TODO: derive Debug when Graph does
+// #[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Response<Id = Ipv4Addr>
 where
     Id: Identifier,

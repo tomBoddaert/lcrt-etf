@@ -1,7 +1,5 @@
 use std::net::Ipv4Addr;
 
-use rustc_hash::FxHashMap;
-
 use crate::{Area, AreaSource, Config, Network, NodeInfo, Response, Timeout, TimeoutId, message};
 
 /// Routing controller for an LCRT area member.
@@ -83,8 +81,8 @@ impl<N: NodeInfo> AreaAny<N> {
         /// Returns whether this routing controller has established an area and is able to send/receive data streams.
         pub [const] fn is_streaming(&self) -> bool;
         /// If the network is established, returns the network topology graph and [`NodeData`](message::NodeData) map.
-        pub [const] fn get_network(&self) -> Option<(&FxHashMap<Ipv4Addr, message::NodeData>, &Network)> ;
-        /// If the network is established, returnss the node's children.
+        pub [const] fn get_network(&self) -> Option<&Network> ;
+        /// If the network is established, returns the node's children.
         pub [const] fn get_children(&self) -> Option<&[Ipv4Addr]>;
         /// Returns whether the network is established and the node has children (and is therefore a forwarder).
         pub [const] fn has_children(&self) -> bool;
@@ -93,7 +91,7 @@ impl<N: NodeInfo> AreaAny<N> {
         ///
         #[doc = doc_handle_return!()]
         pub fn handle_message(&mut self, m: message::Message) -> Response;
-        /// Handle an incomming control [`Message`](message::Message).
+        /// Handle an incoming control [`Message`](message::Message).
         ///
         #[doc = doc_handle_return!()]
         pub fn handle_timeout(&mut self, id: TimeoutId) -> Response;
