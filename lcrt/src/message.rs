@@ -60,7 +60,17 @@ where
 pub struct NodeData<Id = Ipv4Addr> {
     pub address: Id,
     /// The node's position.
-    pub position: glam::DVec3,
+    pub position: Sphere,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum Edge {
+    /// The two nodes' coverages overlap but they are not capable of communication.
+    Intersection,
+    /// The nodes are capable of communication.
+    Connection,
+    /// The parent node is forwarding data to to the child node.
+    Link,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
@@ -80,7 +90,7 @@ pub struct JoinAvailable<Id = Ipv4Addr> {
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct JoinAccept<Id = Ipv4Addr> {
     pub address: Id,
-    pub position: glam::DVec3,
+    pub position: Sphere,
     pub parent: Id,
     pub forwarder: Id,
 }

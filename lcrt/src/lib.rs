@@ -36,7 +36,7 @@ pub use node_info::NodeInfo;
 pub use response::{Event, Response, Timeout, TimeoutId};
 
 /// A graph representing an LCRT area network.
-pub type Network<Id = Ipv4Addr> = Graph<message::NodeData<Id>, ()>;
+pub type Network<Id = Ipv4Addr> = Graph<message::NodeData<Id>, message::Edge>;
 
 /// Alias for [`Copy`]` + `[`Eq`]` + `[`Hash`].
 ///

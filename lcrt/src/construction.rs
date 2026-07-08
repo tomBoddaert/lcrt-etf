@@ -1,47 +1,34 @@
 use std::net::Ipv4Addr;
 
-use common::geo::Sphere;
 use graph::Graph;
-use petgraph::matrix_graph::{MatrixGraph, NodeIndex};
-use rustc_hash::{FxBuildHasher, FxHashSet};
+use rustc_hash::FxHashSet;
 
-use crate::trace;
+use crate::{
+    Identifier,
+    message::{Edge, NodeData},
+    trace,
+};
 
-#[derive(Clone, Copy, Debug)]
-struct Node<Id = Ipv4Addr> {
-    id: Id,
-    sphere: Sphere,
+fn mutual_coverage<Id>(a: &NodeData<Id>, b: &NodeData<Id>) -> bool {
+    a.position.mutual_contains_origin(&b.position)
 }
 
-impl<Id> Node<Id> {
-    fn mutual_coverage(a: &Self, b: &Self) -> bool {
-        a.sphere.contains(b.sphere.o)
-    }
-
-    fn pair_edge_type(a: &Self, b: &Self) -> Option<Edge> {
-        a.sphere.intersections(&b.sphere).map(|(ab, ba)| {
-            if ab && ba {
-                Edge::Connection
-            } else {
-                Edge::Intersection
-            }
-        })
-    }
+fn pair_edge_type<Id>(a: &NodeData<Id>, b: &NodeData<Id>) -> Option<Edge> {
+    a.position.intersections(&b.position).map(|(ab, ba)| {
+        if ab && ba {
+            Edge::Connection
+        } else {
+            Edge::Intersection
+        }
+    })
 }
 
 #[derive(Clone, Copy, Debug)]
-struct ConstructionNode<Id = Ipv4Addr> {
-    node: Node<Id>,
-    hop_distance: u16,
-    availability: f32,
-    interfering_neighbours: u16,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-enum Edge {
-    Intersection,
-    Connection,
-    Link,
+pub struct ConstructionNode<Id = Ipv4Addr> {
+    pub node: NodeData<Id>,
+    pub hop_distance: u16,
+    pub availability: f32,
+    pub interfering_neighbours: u16,
 }
 
 pub struct SystemConstruction<Id = Ipv4Addr, TraceHook = trace::Disabled> {
@@ -66,7 +53,7 @@ enum Trace<'a, Id = Ipv4Addr> {
 
 impl<Id> SystemConstruction<Id>
 where
-    Id: Copy,
+    Id: Identifier,
 {
     #[inline]
     pub const fn new() -> Self {
@@ -76,7 +63,7 @@ where
 
 impl<Id, TraceHook> SystemConstruction<Id, TraceHook>
 where
-    Id: Copy,
+    Id: Identifier,
     for<'t> TraceHook: trace::Hook<Trace<'t, Id>>,
 {
     #[inline]
@@ -109,7 +96,7 @@ where
                 continue;
             };
 
-            if !Node::<Id>::mutual_coverage(&node.node, &candidate.node) {
+            if !mutual_coverage(&node.node, &candidate.node) {
                 continue;
             }
 
@@ -120,7 +107,7 @@ where
         }
     }
 
-    pub fn construct(self) -> Graph<Node<Id>, Edge> {
+    pub fn construct(self) -> Graph<NodeData<Id>, Edge> {
         let Self {
             connectivity,
             mut trace_hook,
@@ -192,14 +179,29 @@ where
             }
         }
 
+        add_intersections(&mut network);
         network
     }
+}
 
-    fn add_intersections(network: &mut MatrixGraph<Node, Edge, FxBuildHasher>) {
-        // TODO: iterate through pairs, adding edges between ones with intersecting coverages
-        // as nodes have been removed, the indexes do not follow a logical order
-        todo!()
-    }
+fn add_intersections<Id>(network: &mut Graph<NodeData<Id>, Edge>)
+where
+    Id: Identifier,
+{
+    network.edit_edge_pairs(|a, b, ab, ba| {
+        let Some((abi, bai)) = a.position.intersections(&b.position) else {
+            debug_assert!(ab.is_none() && ba.is_none());
+            return (None, None);
+        };
+
+        let e = if abi && bai {
+            Edge::Connection
+        } else {
+            Edge::Intersection
+        };
+
+        (ab.or(Some(e)), ba.or(Some(e)))
+    });
 }
 
 fn extract_level<'i, I, Id>(nodes: I, level: u16, to: &mut FxHashSet<usize>)
@@ -225,13 +227,13 @@ impl<Id> ConstructionNode<Id> {
     }
 }
 
-fn delete_tree<N, E>(graph: &mut MatrixGraph<N, E, FxBuildHasher>, root: NodeIndex) {
-    while let Some(neighbour) = graph.neighbors(root).next() {
-        delete_tree(graph, neighbour);
-    }
+// fn delete_tree<N, E>(graph: &mut MatrixGraph<N, E, FxBuildHasher>, root: NodeIndex) {
+//     while let Some(neighbour) = graph.neighbors(root).next() {
+//         delete_tree(graph, neighbour);
+//     }
 
-    graph.remove_node(root);
-}
+//     graph.remove_node(root);
+// }
 
 #[cfg(test)]
 mod test {
@@ -239,11 +241,10 @@ mod test {
 
     use crate::{
         construction::{ConstructionNode, SystemConstruction},
+        message::NodeData,
         test::tree_example,
         trace,
     };
-
-    use super::Node;
 
     #[test]
     fn tree_connectivity() {
@@ -257,9 +258,9 @@ mod test {
         } in tree_example::NODES
         {
             construction.add(ConstructionNode {
-                node: Node {
-                    id: *id,
-                    sphere: *sphere,
+                node: NodeData {
+                    address: *id,
+                    position: *sphere,
                 },
                 hop_distance: *hop_distance,
                 availability: f32::INFINITY,
@@ -302,7 +303,7 @@ mod test {
                         children,
                     } => {
                         let forwarder = &tree_example::NODES[f];
-                        assert_eq!(nodes[f].node.id, forwarder.id);
+                        assert_eq!(nodes[f].node.address, forwarder.id);
                         assert!(self.remaining_forwarders.remove(&forwarder.id));
 
                         assert_eq!(forwarder.children.len(), children.len());
@@ -328,9 +329,9 @@ mod test {
         } in tree_example::NODES
         {
             construction.add(ConstructionNode {
-                node: Node {
-                    id: *id,
-                    sphere: *sphere,
+                node: NodeData {
+                    address: *id,
+                    position: *sphere,
                 },
                 hop_distance: *hop_distance,
                 availability: f32::INFINITY,
@@ -346,13 +347,15 @@ mod test {
         let mut children = FxHashSet::default();
         for n in graph.node_indices() {
             let node = &tree_example::NODES[n];
-            assert_eq!(graph.node(n).id, node.id);
+            assert_eq!(graph.node(n).address, node.id);
 
             children.extend(node.children.iter().copied());
             for c in graph.neighbours(n) {
-                assert!(children.remove(graph.node(c).id));
+                assert!(children.remove(graph.node(c).address));
             }
             assert!(children.is_empty());
         }
     }
+
+    // TODO: test added intersections
 }

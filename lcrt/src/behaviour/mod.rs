@@ -1,8 +1,11 @@
 mod construction;
 mod forward_join_request;
+mod sending;
 mod streaming;
+
 pub use {
-    construction::Construction, forward_join_request::ForwardJoinRequests, streaming::Streaming,
+    construction::Construction, forward_join_request::ForwardJoinRequests, sending::Sending,
+    streaming::Streaming,
 };
 
 // pub trait Behaviour {

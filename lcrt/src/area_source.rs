@@ -1,12 +1,12 @@
 use std::{net::Ipv4Addr, num::Wrapping};
 
-use graph::Graph;
+use common::geo::Sphere;
 use petgraph::stable_graph;
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{
-    Config, Network, NodeInfo, Response, TimeoutId, availability, construction::SystemConstruction,
-    message,
+    Config, Network, NodeInfo, Response, TimeoutId, behaviour::Sending,
+    construction::SystemConstruction, message,
 };
 
 /// Routing controller for an LCRT area source.
@@ -31,25 +31,19 @@ impl<N: NodeInfo> AreaSource<N> {
     ) -> (Self, Response) {
         assert!(config.is_valid());
 
-        let position = node_info.position();
+        let position = Sphere::new(node_info.position(), config.radius);
 
-        let mut nodes = FxHashMap::default();
-        let mut coverage = petgraph::stable_graph::StableGraph::new();
-
-        // add the source to the coverage graph and nodes map
-        let coverage_index = coverage.add_node(address);
-        nodes.insert(
-            address,
-            ConstructionNode {
-                hop_distance: 0,
-                position,
-                availability: availability(config.bitrate_capacity, node_info.current_bitrate()),
-                interfering_neighbours: node_info.interfering_neighbours(),
-                coverage_index,
-            },
-        );
+        let mut construction = SystemConstruction::new();
+        construction.add(crate::construction::ConstructionNode {
+            node: message::NodeData { address, position },
+            hop_distance: 0,
+            // this is the only node in level 0, so the metrics do not matter
+            availability: f32::INFINITY,
+            interfering_neighbours: 0,
+        });
 
         let m = message::AreaConstruction {
+            k: config.k,
             ttl: config.k,
             position,
         };
@@ -60,7 +54,10 @@ impl<N: NodeInfo> AreaSource<N> {
                 address,
                 group,
                 node_info,
-                state: State::Construction { nodes, coverage },
+                state: State::Construction {
+                    addresses: FxHashSet::default(),
+                    construction,
+                },
             },
             (m, t).into(),
         )
@@ -96,63 +93,63 @@ impl<N: NodeInfo> AreaSource<N> {
 
     #[inline]
     /// If the network is established, returns the network topology graph and [`message::NodeData`] map.
-    pub const fn get_network(&self) -> Option<(&FxHashMap<Ipv4Addr, message::NodeData>, &Network)> {
-        let State::Streaming { nodes, network, .. } = &self.state else {
+    pub const fn get_network(&self) -> Option<&Network> {
+        let State::Streaming { network, .. } = &self.state else {
             return None;
         };
 
-        Some((nodes, network))
+        Some(network)
     }
 
     #[inline]
     /// If the network is established, returnss the node's children.
     pub const fn get_children(&self) -> Option<&[Ipv4Addr]> {
-        let State::Streaming { neighbours, .. } = &self.state else {
+        let State::Streaming { sending, .. } = &self.state else {
             return None;
         };
 
-        Some(neighbours.as_slice())
+        Some(sending.get_children())
     }
 
     #[inline]
     /// Returns whether the network is established and the node has children (and is therefore a forwarder).
     pub const fn has_children(&self) -> bool {
-        // Option::map_or is not const, so use match
-        match self.get_children() {
-            Some(children) => !children.is_empty(),
-            None => false,
-        }
+        let State::Streaming { sending, .. } = &self.state else {
+            return false;
+        };
+
+        sending.has_children()
     }
 
+    #[inline]
     /// Returns the next packet ID in the stream.
     pub fn next_packet_id(&mut self) -> Option<u8> {
-        let State::Streaming { next_packet_id, .. } = &mut self.state else {
+        let State::Streaming { sending, .. } = &mut self.state else {
             return None;
         };
 
-        let pid = next_packet_id.0;
-        *next_packet_id += 1;
-        Some(pid)
+        Some(sending.next_packet_id().0)
     }
 }
 
 // TODO: enable debug once Graph has debug impl
 // #[derive(Debug)]
-enum State<Id = Ipv4Addr> {
-    Construction(SystemConstruction<Id>),
+enum State {
+    Construction {
+        addresses: FxHashSet<Ipv4Addr>,
+        construction: SystemConstruction,
+    },
     Streaming {
         area_info_id: Wrapping<u8>,
-        nodes: FxHashMap<Id, message::NodeData>,
-        network: Graph<Ipv4Addr, ()>,
-        neighbours: Vec<Id>,
-        next_packet_id: Wrapping<u8>,
+        network: Network,
+        sending: Sending,
     },
 }
 
 #[derive(Debug)]
 struct ConstructionNode {
     hop_distance: u16,
-    position: glam::DVec3,
+    position: Sphere,
     availability: f32,
     interfering_neighbours: u16,
     coverage_index: stable_graph::NodeIndex,
@@ -163,29 +160,26 @@ impl<N: NodeInfo> AreaSource<N> {
         assert_eq!(id, TimeoutId::Control, "expected a control timeout");
 
         match &mut self.state {
-            State::Construction(construction) => {
+            State::Construction { construction, .. } => {
                 let construction = std::mem::replace(construction, SystemConstruction::new());
                 let network = construction.construct();
-                let (nodes, network) = network.take_nodes();
+                // let (nodes, network) = network.take_nodes();
 
-                // let me = new_nodes[&self.address];
-                let me = nodes[&self.address];
-                let neighbours: Vec<_> = network.neighbors(me.index).map(|i| network[i]).collect();
+                let sending = Sending::new(&network, self.address)
+                    .expect("[unreachable] expected this node (the root) to be in the network");
 
                 let id = Wrapping(0);
-                let m = (!neighbours.is_empty()).then(|| message::AreaInfo {
+                let m = sending.has_children().then(|| message::AreaInfo {
                     id,
                     network: network.clone(),
-                    nodes: new_nodes.clone(),
+                    next_packet_id: sending.peek_next_packet_id(),
                 });
                 // println!("{m:?}");
 
                 self.state = State::Streaming {
                     area_info_id: id,
-                    nodes: new_nodes,
                     network,
-                    neighbours,
-                    next_packet_id: Wrapping(0),
+                    sending,
                 };
 
                 m.into()
@@ -212,7 +206,10 @@ impl<N: NodeInfo> AreaSource<N> {
 
     pub fn handle_join_report(&mut self, m: message::JoinReport) -> Response {
         match &mut self.state {
-            State::Construction { nodes, coverage } => {
+            State::Construction {
+                addresses,
+                construction,
+            } => {
                 let message::JoinReport {
                     address,
                     hop_distance,
@@ -221,41 +218,21 @@ impl<N: NodeInfo> AreaSource<N> {
                     interfering_neighbours,
                     ..
                 } = m;
-                // println!("{m:?}");
 
+                // TODO: move deduplication logic to construction system?
                 // deduplicate
-                if nodes.contains_key(&address) {
+                if addresses.contains(&address) {
                     return Default::default();
                 }
 
-                let coverage_index = coverage.add_node(address);
-
-                let node = ConstructionNode {
+                construction.add(crate::construction::ConstructionNode {
+                    node: message::NodeData { address, position },
                     hop_distance,
-                    position,
                     availability,
                     interfering_neighbours,
-                    coverage_index,
-                };
+                });
 
-                let potential_forwarders = nodes
-                    .values()
-                    .filter(|n| n.hop_distance == hop_distance - 1)
-                    .map(|f| (f, &node));
-                let potential_children = nodes
-                    .values()
-                    .filter(|n| n.hop_distance == hop_distance + 1)
-                    .map(|c| (&node, c));
-
-                // filter the candidates by coverage and add edges to the graph
-                for (f, c) in potential_forwarders
-                    .chain(potential_children)
-                    .filter(|(f, c)| f.covers(c, self.config.radius))
-                {
-                    coverage.add_edge(f.coverage_index, c.coverage_index, ());
-                }
-
-                nodes.insert(m.address, node);
+                addresses.insert(m.address);
 
                 (TimeoutId::Control, self.config.source_construct_timeout).into()
             }
@@ -290,10 +267,8 @@ impl<N: NodeInfo> AreaSource<N> {
 
             State::Streaming {
                 area_info_id,
-                nodes,
                 network,
-                neighbours,
-                ..
+                sending,
             } => {
                 // if we are not the parent and we are not the next forwarder, ignore it
                 if m.forwarder == m.address {
@@ -302,7 +277,7 @@ impl<N: NodeInfo> AreaSource<N> {
                     }
                     // TODO: temporarily add the node to the neighbours to start forwarding immediately
                     // need to also accept messages on the other end
-                } else if !neighbours.contains(&m.forwarder) {
+                } else if !sending.get_children().contains(&m.forwarder) {
                     return Response::default();
                 }
 
@@ -311,85 +286,53 @@ impl<N: NodeInfo> AreaSource<N> {
                 //     self.address, m.address
                 // );
 
-                if let Some(entry) = nodes.remove(&m.address) {
-                    // remove subtree rooted at the node
-                    let mut to_remove = Vec::new();
-                    petgraph::visit::depth_first_search(
-                        &*network,
-                        std::iter::once(entry.index),
-                        |event| match event {
-                            petgraph::visit::DfsEvent::Discover(ix, _) => {
-                                to_remove.push(ix);
-                            }
-                            petgraph::visit::DfsEvent::TreeEdge(..)
-                            | petgraph::visit::DfsEvent::Finish(..) => {}
-                            petgraph::visit::DfsEvent::BackEdge(..)
-                            | petgraph::visit::DfsEvent::CrossForwardEdge(..) => {
-                                unreachable!("did not expect a non-tree edge")
-                            }
-                        },
-                    );
-
-                    #[cfg(debug_assertions)]
-                    {
-                        let parent = &nodes[&m.parent];
-                        debug_assert!(!to_remove.contains(&parent.index));
-                    }
-
-                    // removal must be done in reverse order
-                    // to_remove.sort_unstable();
-                    for ix in to_remove.into_iter().rev() {
-                        // let last_ix = network
-                        //     .node_indices()
-                        //     .next_back()
-                        //     .expect("expected network to contain at least one node");
-
-                        // // set the last node's index to the removed index
-                        // if ix != last_ix {
-                        //     let last_node = nodes
-                        //         .get_mut(&network[last_ix])
-                        //         .expect("expected node from network to exist in nodes map");
-                        //     last_node.index = ix;
-                        // }
-
-                        // remove the node
-                        let id = network
-                            .remove_node(ix)
-                            .expect("expected node from network to exist in the network");
-                        // println!("Removing node {id}");
-                        let removed = nodes.remove(&id);
-                        if id == m.address {
-                            debug_assert!(removed.is_none());
-                            debug_assert_eq!(ix, entry.index);
-                        } else {
-                            debug_assert_eq!(removed.map(|node| node.index), Some(ix));
-                        }
-                    }
+                if sending.get_children().contains(&m.address) {
+                    todo!("handle [re]moving subtree rooted at joining node");
                 }
 
-                let ix = network.add_node(m.address);
-                nodes.insert(
-                    m.address,
-                    message::NodeData {
-                        position: m.position,
-                        index: ix,
+                let n = network.add_node(message::NodeData {
+                    address: m.address,
+                    position: m.position,
+                });
+                let p = network
+                    .nodes()
+                    .iter()
+                    .position(|node| node.address == m.parent)
+                    .expect("expected parent to be in network");
+                network.add_edge(p, n, message::Edge::Link);
+
+                network.edit_edge_pairs_for_node(
+                    |a, b, ab, ba| {
+                        let Some((abi, bai)) = a.position.intersections(&b.position) else {
+                            debug_assert!(ab.is_none() && ba.is_none());
+                            return (None, None);
+                        };
+
+                        let e = if abi && bai {
+                            message::Edge::Connection
+                        } else {
+                            message::Edge::Intersection
+                        };
+
+                        // don't override the parent -link> node edge
+                        (Some(e), ba.or(Some(e)))
                     },
+                    n,
                 );
-                let parent = nodes[&m.parent];
-                network.add_edge(parent.index, ix, ());
+
+                *sending = std::mem::replace(sending, Sending::dummy())
+                    .update(&network, self.address)
+                    .expect("[unreachable] expected this node (the root) to be in the network");
 
                 // println!("{network:?}");
 
-                let me = nodes[&self.address];
-                neighbours.clear();
-                neighbours.extend(network.neighbors(me.index).map(|i| network[i]));
-
                 *area_info_id += 1;
-                (!neighbours.is_empty())
+                sending
+                    .has_children()
                     .then(|| message::AreaInfo {
                         id: *area_info_id,
                         network: network.clone(),
-                        nodes: nodes.clone(),
+                        next_packet_id: sending.peek_next_packet_id(),
                     })
                     .into()
             }
@@ -404,10 +347,6 @@ impl ConstructionNode {
             children,
             f32::from(self.interfering_neighbours) + f32::from(added_interfering_nodes),
         )
-    }
-
-    fn covers(&self, other: &Self, radius: f64) -> bool {
-        self.position.distance_squared(other.position) <= radius * radius
     }
 }
 

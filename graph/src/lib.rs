@@ -106,6 +106,47 @@ impl<N, E> Graph<N, E> {
             },
         )
     }
+
+    pub fn edit_edges<F>(&mut self, mut f: F)
+    where
+        F: FnMut(&N, &N, Option<E>) -> Option<E>,
+    {
+        for (ai, a) in self.nodes.iter().enumerate() {
+            for (bi, b) in self.nodes.iter().enumerate() {
+                let edge = self.adjacency.edge_mut(ai, bi);
+                *edge = f(a, b, edge.take());
+            }
+        }
+    }
+
+    pub fn edit_edge_pairs<F>(&mut self, mut f: F)
+    where
+        F: FnMut(&N, &N, Option<E>, Option<E>) -> (Option<E>, Option<E>),
+    {
+        for ai in self.node_indices() {
+            let a = &self.nodes[ai];
+            for bi in 0..ai {
+                let b = &self.nodes[bi];
+                let (ab, ba) = self.adjacency.edge_pair_mut(ai, bi);
+                (*ab, *ba) = f(a, b, ab.take(), ba.take());
+            }
+        }
+    }
+
+    pub fn edit_edge_pairs_for_node<F>(&mut self, mut f: F, node: usize)
+    where
+        F: FnMut(&N, &N, Option<E>, Option<E>) -> (Option<E>, Option<E>),
+    {
+        let a = &self.nodes[node];
+        for bi in self.node_indices() {
+            if bi == node {
+                continue;
+            }
+            let b = &self.nodes[bi];
+            let (ab, ba) = self.adjacency.edge_pair_mut(node, bi);
+            (*ab, *ba) = f(a, b, ab.take(), ba.take());
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -183,5 +224,13 @@ impl<T> VecMatrix<T> {
 
     fn edge_mut(&mut self, from: usize, to: usize) -> &mut Option<T> {
         &mut self.data[self.n * from + to]
+    }
+
+    fn edge_pair_mut(&mut self, ai: usize, bi: usize) -> (&mut Option<T>, &mut Option<T>) {
+        let [ab, ba] = self
+            .data
+            .get_disjoint_mut([ai, bi])
+            .expect("indicies were not disjoint");
+        (ab, ba)
     }
 }
